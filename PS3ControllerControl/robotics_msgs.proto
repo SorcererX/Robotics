@@ -1,0 +1,39 @@
+syntax = "proto3";
+package robotics_msgs;
+//option optimize_for = LITE_RUNTIME;
+
+message PressureButton
+{
+    bool pressed = 1;
+    int32 value = 2;
+}
+
+message Axis
+{
+    int32 vertical = 1;
+    int32 horizontal = 2;
+}
+
+message PS3Controller {
+    uint64 time = 1;
+    PressureButton l2 = 2;
+    PressureButton r2 = 3;
+    Axis left_axis = 4;
+    Axis right_axis = 5;
+    bool l1_pressed = 6;
+    bool r1_pressed = 7;
+    bool left_pressed = 8;
+    bool right_pressed = 9;
+    bool up_pressed = 10;
+    bool down_pressed = 11;
+    bool select_pressed = 12;
+    bool start_pressed = 13;
+    bool ps_pressed = 14;
+    bool l3_pressed = 15;
+    bool r3_pressed = 16;
+    bool triangle_pressed = 17;
+    bool circle_pressed = 18;
+    bool cross_pressed = 19;
+    bool square_pressed = 20;
+}
+
