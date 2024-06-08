@@ -19,7 +19,8 @@ void Translator::own_thread()
 {
     sepia::comm2::MessageSender::init();
     sepia::comm2::ObserverBase::initReceiver();
-    sepia::comm2::Observer< robotics_msgs::PS3Controller >::initReceiver();
+    sepia::comm2::Observer< robotics_msgs::PS3Axis >::initReceiver();
+    sepia::comm2::Observer< robotics_msgs::PS3Button >::initReceiver();
     while( !m_terminate && sepia::comm2::ObserverBase::threadReceiver() )
     {
     }
@@ -27,11 +28,20 @@ void Translator::own_thread()
     sepia::comm2::MessageSender::destroy();
 }
 
-void Translator::receive( const robotics_msgs::PS3Controller& a_msg )
+void Translator::receive( const robotics_msgs::PS3Axis& a_msg )
 {
     std::cout << a_msg.ShortDebugString() << std::endl;
     roboclaw_msgs::Move msg;
 
+    msg.set_left_motor( ( a_msg.left_axis().vertical() * m_scalingFactor ) / 32767 );
+    msg.set_right_motor( ( a_msg.right_axis().vertical() * m_scalingFactor ) / 32767 );
+
+    sepia::comm2::Dispatcher< roboclaw_msgs::Move >::send( &msg );
+}
+
+void Translator::receive( const robotics_msgs::PS3Button& a_msg )
+{
+    std::cout << a_msg.ShortDebugString() << std::endl;
     if( a_msg.cross_pressed() )
     {
         m_scalingFactor = -31;
@@ -44,9 +54,13 @@ void Translator::receive( const robotics_msgs::PS3Controller& a_msg )
     {
         m_scalingFactor = -63;
     }
-
-    msg.set_left_motor( ( a_msg.left_axis().vertical() * m_scalingFactor ) / 32767 );
-    msg.set_right_motor( ( a_msg.right_axis().vertical() * m_scalingFactor ) / 32767 );
-
-    sepia::comm2::Dispatcher< roboclaw_msgs::Move >::send( &msg );
+    else if( a_msg.circle_pressed() )
+    {
+        m_scalingFactor = -15;
+    }
+    else if( a_msg.r1_pressed() )
+    {
+        roboclaw_msgs::RequestStatus msg;
+        sepia::comm2::Dispatcher< roboclaw_msgs::RequestStatus >::send( &msg );
+    }
 }

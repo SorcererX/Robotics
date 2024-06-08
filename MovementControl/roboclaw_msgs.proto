@@ -6,3 +6,27 @@ message Move
     int32 left_motor = 1;
     int32 right_motor = 2;
 }
+
+message MovePosition
+{
+    int32 left_speed = 1;
+    int32 left_acceleration = 2;
+    int32 left_distance = 3;
+    int32 right_speed = 4;
+    int32 right_acceleration = 5;
+    int32 right_distance = 6;
+    bool clear_buffer = 7;
+}
+
+message MoveStatus
+{
+    int32 left_encoder = 1;
+    int32 left_speed = 2;
+    int32 right_encoder = 3;
+    int32 right_speed = 4;
+}
+
+message RequestStatus
+{
+    int32 time = 1;
+}

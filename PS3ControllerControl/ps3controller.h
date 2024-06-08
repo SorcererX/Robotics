@@ -13,9 +13,8 @@ protected:
     void process_event( const struct js_event& e ) override;
 
 private:
-    robotics_msgs::PS3Controller m_msg;
-    robotics_msgs::PressureButton m_l2;
-    robotics_msgs::PressureButton m_r2;
+    robotics_msgs::PS3Axis m_axisMsg;
+    robotics_msgs::PS3Button m_buttonMsg;
     robotics_msgs::Axis m_left;
     robotics_msgs::Axis m_right;
 };

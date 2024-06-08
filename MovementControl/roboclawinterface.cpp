@@ -1,5 +1,7 @@
 #include "roboclawinterface.h"
 #include "roboclaw_msgs.pb.h"
+#include <sepia/comm2/dispatcher.h>
+#include <sepia/comm2/messagesender.h>
 
 RoboClawInterface::RoboClawInterface()
     : m_motor( "/dev/ttyACM0", 5, 0x80 )
@@ -14,12 +16,19 @@ RoboClawInterface::~RoboClawInterface()
 
 void RoboClawInterface::own_thread()
 {
+    sepia::comm2::MessageSender::init();
     sepia::comm2::ObserverBase::initReceiver();
     sepia::comm2::Observer< roboclaw_msgs::Move >::initReceiver();
+    sepia::comm2::Observer< roboclaw_msgs::RequestStatus >::initReceiver();
+    sepia::comm2::Observer< roboclaw_msgs::MovePosition >::initReceiver();
     while( !m_terminate && sepia::comm2::ObserverBase::threadReceiver() )
     {
     }
+    sepia::comm2::Observer< roboclaw_msgs::Move >::destroyReceiver();
+    sepia::comm2::Observer< roboclaw_msgs::RequestStatus >::destroyReceiver();
+    sepia::comm2::Observer< roboclaw_msgs::MovePosition >::destroyReceiver();
     sepia::comm2::ObserverBase::destroyReceiver();
+    sepia::comm2::MessageSender::destroy();
 }
 
 void RoboClawInterface::receive( const roboclaw_msgs::Move& a_msg )
@@ -56,4 +65,25 @@ void RoboClawInterface::receive( const roboclaw_msgs::Move& a_msg )
     }
 
     std::cout << " LEFT: " << left_ok << " RIGHT: " << right_ok << std::endl;
+}
+
+void RoboClawInterface::receive( const roboclaw_msgs::MovePosition& a_msg )
+{
+    std::cout << a_msg.ShortDebugString() << std::endl;
+    //m_motor.SpeedAccelDeccelPositionM1M2
+}
+
+void RoboClawInterface::receive( const roboclaw_msgs::RequestStatus& a_msg )
+{
+    std::cout << a_msg.ShortDebugString() << std::endl;
+    roboclaw_msgs::MoveStatus msg;
+    uint8_t status;
+    bool valid;
+
+    msg.set_left_encoder( m_motor.ReadEncM1( &status, &valid ) );
+    msg.set_right_encoder( m_motor.ReadEncM2( &status, &valid ) );
+    msg.set_left_speed( m_motor.ReadSpeedM1( &status, &valid ) );
+    msg.set_right_speed( m_motor.ReadSpeedM2( &status, &valid ) );
+    std::cout << msg.ShortDebugString() << std::endl;
+    //sepia::comm2::Dispatcher< roboclaw_msgs::MoveStatus >::send( &msg );
 }
