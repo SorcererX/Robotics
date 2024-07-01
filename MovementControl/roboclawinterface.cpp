@@ -2,6 +2,7 @@
 #include "roboclaw_msgs.pb.h"
 #include <sepia/comm2/dispatcher.h>
 #include <sepia/comm2/messagesender.h>
+#include <sepia/comm2/receiver.h>
 
 RoboClawInterface::RoboClawInterface()
     : m_motor( "/dev/ttyACM0", 5, 0x80 )
@@ -17,17 +18,10 @@ RoboClawInterface::~RoboClawInterface()
 void RoboClawInterface::own_thread()
 {
     sepia::comm2::MessageSender::init();
-    sepia::comm2::ObserverBase::initReceiver();
-    sepia::comm2::Observer< roboclaw_msgs::Move >::initReceiver();
-    sepia::comm2::Observer< roboclaw_msgs::RequestStatus >::initReceiver();
-    sepia::comm2::Observer< roboclaw_msgs::MovePosition >::initReceiver();
-    while( !m_terminate && sepia::comm2::ObserverBase::threadReceiver() )
+    sepia::comm2::Receiver handler( this );
+    while( !m_terminate && handler.exec() )
     {
     }
-    sepia::comm2::Observer< roboclaw_msgs::Move >::destroyReceiver();
-    sepia::comm2::Observer< roboclaw_msgs::RequestStatus >::destroyReceiver();
-    sepia::comm2::Observer< roboclaw_msgs::MovePosition >::destroyReceiver();
-    sepia::comm2::ObserverBase::destroyReceiver();
     sepia::comm2::MessageSender::destroy();
 }
 

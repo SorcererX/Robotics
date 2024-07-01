@@ -5,6 +5,7 @@
 #include <sepia/comm2/messagesender.h>
 #include <sepia/comm2/observer.h>
 #include <sepia/comm2/observerbase.h>
+#include <sepia/comm2/receiver.h>
 #include "roboclaw_msgs.pb.h"
 
 Translator::Translator()
@@ -18,13 +19,10 @@ Translator::~Translator()
 void Translator::own_thread()
 {
     sepia::comm2::MessageSender::init();
-    sepia::comm2::ObserverBase::initReceiver();
-    sepia::comm2::Observer< robotics_msgs::PS3Axis >::initReceiver();
-    sepia::comm2::Observer< robotics_msgs::PS3Button >::initReceiver();
-    while( !m_terminate && sepia::comm2::ObserverBase::threadReceiver() )
+    sepia::comm2::Receiver handler( this );
+    while( !m_terminate && handler.exec() )
     {
     }
-    sepia::comm2::ObserverBase::destroyReceiver();
     sepia::comm2::MessageSender::destroy();
 }
 
