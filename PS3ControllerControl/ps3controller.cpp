@@ -1,5 +1,5 @@
 #include "ps3controller.h"
-#include <sepia/comm2/messagesender.h>
+#include <sepia/comm2/scopedmessagesender.h>
 #include <sepia/comm2/dispatcher.h>
 
 PS3Controller::PS3Controller()
@@ -17,9 +17,8 @@ PS3Controller::~PS3Controller()
 
 void PS3Controller::own_thread()
 {
-    sepia::comm2::MessageSender::init();
+    sepia::comm2::ScopedMessageSender sender;
     Joystick::own_thread();
-    sepia::comm2::MessageSender::destroy();
 }
 
 void PS3Controller::process_event( const struct js_event& e )

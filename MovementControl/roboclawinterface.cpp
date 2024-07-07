@@ -1,8 +1,8 @@
 #include "roboclawinterface.h"
 #include "roboclaw_msgs.pb.h"
 #include <sepia/comm2/dispatcher.h>
-#include <sepia/comm2/messagesender.h>
 #include <sepia/comm2/receiver.h>
+#include <sepia/comm2/scopedmessagesender.h>
 
 RoboClawInterface::RoboClawInterface()
     : m_motor( "/dev/ttyACM0", 5, 0x80 )
@@ -17,12 +17,11 @@ RoboClawInterface::~RoboClawInterface()
 
 void RoboClawInterface::own_thread()
 {
-    sepia::comm2::MessageSender::init();
+    sepia::comm2::ScopedMessageSender sender;
     sepia::comm2::Receiver handler( this );
     while( !m_terminate && handler.exec() )
     {
     }
-    sepia::comm2::MessageSender::destroy();
 }
 
 void RoboClawInterface::receive( const roboclaw_msgs::Move& a_msg )

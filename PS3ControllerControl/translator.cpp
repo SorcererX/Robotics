@@ -2,7 +2,7 @@
 #include "translator.h"
 #include "robotics_msgs.pb.h"
 #include <sepia/comm2/dispatcher.h>
-#include <sepia/comm2/messagesender.h>
+#include <sepia/comm2/scopedmessagesender.h>
 #include <sepia/comm2/observer.h>
 #include <sepia/comm2/observerbase.h>
 #include <sepia/comm2/receiver.h>
@@ -18,12 +18,11 @@ Translator::~Translator()
 
 void Translator::own_thread()
 {
-    sepia::comm2::MessageSender::init();
+    sepia::comm2::ScopedMessageSender sender;
     sepia::comm2::Receiver handler( this );
     while( !m_terminate && handler.exec() )
     {
     }
-    sepia::comm2::MessageSender::destroy();
 }
 
 void Translator::receive( const robotics_msgs::PS3Axis& a_msg )
