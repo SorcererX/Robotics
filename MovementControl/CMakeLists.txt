@@ -9,5 +9,5 @@ PROTOBUF_GENERATE_CPP(PROTO_SRCS
 
 add_executable( ${PROJECT_NAME} )
 target_sources( ${PROJECT_NAME} PRIVATE main.cpp roboclawinterface.cpp roboclawinterface.h ${PROTO_SRCS} ${PROTO_HDRS} )
-target_link_libraries( ${PROJECT_NAME} -L/usr/local/lib -lSepiaStream -lRoboClaw -lzmq ${PROTOBUF_LIBRARIES})
+target_link_libraries( ${PROJECT_NAME} -L/usr/local/lib -lSepiaComm -lSepiaStream -lRoboClaw -lzmq ${PROTOBUF_LIBRARIES})
 target_link_libraries( ${PROJECT_NAME} -lpthread -lrt )
