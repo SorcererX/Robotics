@@ -11,11 +11,13 @@ message MovePosition
 {
     int32 left_speed = 1;
     int32 left_acceleration = 2;
-    int32 left_distance = 3;
-    int32 right_speed = 4;
-    int32 right_acceleration = 5;
-    int32 right_distance = 6;
-    bool clear_buffer = 7;
+    int32 left_deceleration = 3;
+    int32 left_distance = 4;
+    int32 right_speed = 5;
+    int32 right_acceleration = 6;
+    int32 right_deceleration = 7;
+    int32 right_distance = 8;
+    bool clear_buffer = 9;
 }
 
 message MoveStatus

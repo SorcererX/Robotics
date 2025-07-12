@@ -62,13 +62,23 @@ void RoboClawInterface::receive( const roboclaw_msgs::Move& a_msg )
 
 void RoboClawInterface::receive( const roboclaw_msgs::MovePosition& a_msg )
 {
-    std::cout << a_msg.ShortDebugString() << std::endl;
-    //m_motor.SpeedAccelDeccelPositionM1M2
+    std::cout << a_msg.ShortDebugString() << std::flush;
+    bool result = m_motor.SpeedAccelDeccelPositionM1M2(
+        a_msg.left_acceleration(),
+        a_msg.left_speed(),
+        a_msg.left_deceleration(),
+        a_msg.left_distance(),
+        a_msg.right_acceleration(),
+        a_msg.right_speed(),
+        a_msg.right_deceleration(),
+        a_msg.right_distance(),
+        a_msg.clear_buffer() );
+
+    std::cout << " Move Position result: " << result << std::endl;
 }
 
 void RoboClawInterface::receive( const roboclaw_msgs::RequestStatus& a_msg )
 {
-    std::cout << a_msg.ShortDebugString() << std::endl;
     roboclaw_msgs::MoveStatus msg;
     uint8_t status;
     bool valid;
@@ -77,6 +87,5 @@ void RoboClawInterface::receive( const roboclaw_msgs::RequestStatus& a_msg )
     msg.set_right_encoder( m_motor.ReadEncM2( &status, &valid ) );
     msg.set_left_speed( m_motor.ReadSpeedM1( &status, &valid ) );
     msg.set_right_speed( m_motor.ReadSpeedM2( &status, &valid ) );
-    std::cout << msg.ShortDebugString() << std::endl;
-    //sepia::comm2::Dispatcher< roboclaw_msgs::MoveStatus >::send( &msg );
+    sepia::comm2::Dispatcher< roboclaw_msgs::MoveStatus >::send( &msg );
 }
