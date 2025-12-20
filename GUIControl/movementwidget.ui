@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>379</width>
-    <height>158</height>
+    <width>385</width>
+    <height>307</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -16,14 +16,28 @@
   <layout class="QVBoxLayout" name="verticalLayout">
    <item>
     <layout class="QGridLayout" name="gridLayout">
-     <item row="0" column="0">
-      <widget class="QLabel" name="lLeftSpeed">
+     <item row="0" column="1">
+      <widget class="QLabel" name="lLeft">
        <property name="text">
-        <string>Left Speed:</string>
+        <string>Left</string>
        </property>
       </widget>
      </item>
-     <item row="0" column="1">
+     <item row="0" column="2">
+      <widget class="QLabel" name="lRight">
+       <property name="text">
+        <string>Right</string>
+       </property>
+      </widget>
+     </item>
+     <item row="1" column="0">
+      <widget class="QLabel" name="lSpeed">
+       <property name="text">
+        <string>Speed</string>
+       </property>
+      </widget>
+     </item>
+     <item row="1" column="1">
       <widget class="QDoubleSpinBox" name="iLeftSpeed">
        <property name="suffix">
         <string/>
@@ -32,21 +46,14 @@
         <number>5</number>
        </property>
        <property name="minimum">
-        <double>-127.000000000000000</double>
+        <double>0.000000000000000</double>
        </property>
        <property name="maximum">
-        <double>127.000000000000000</double>
+        <double>4000000.000000000000000</double>
        </property>
       </widget>
      </item>
-     <item row="1" column="0">
-      <widget class="QLabel" name="lRightSpeed">
-       <property name="text">
-        <string>Right Speed:</string>
-       </property>
-      </widget>
-     </item>
-     <item row="1" column="1">
+     <item row="1" column="2">
       <widget class="QDoubleSpinBox" name="iRightSpeed">
        <property name="suffix">
         <string/>
@@ -55,30 +62,203 @@
         <number>5</number>
        </property>
        <property name="minimum">
-        <double>-127.000000000000000</double>
+        <double>0.000000000000000</double>
        </property>
        <property name="maximum">
-        <double>127.000000000000000</double>
+        <double>4000000.000000000000000</double>
+       </property>
+      </widget>
+     </item>
+     <item row="2" column="0">
+      <widget class="QLabel" name="lSpeed_2">
+       <property name="text">
+        <string>Acceleration</string>
+       </property>
+      </widget>
+     </item>
+     <item row="2" column="1">
+      <widget class="QDoubleSpinBox" name="iLeftAcceleration">
+       <property name="suffix">
+        <string/>
+       </property>
+       <property name="decimals">
+        <number>5</number>
+       </property>
+       <property name="minimum">
+        <double>0.000000000000000</double>
+       </property>
+       <property name="maximum">
+        <double>4000000.000000000000000</double>
+       </property>
+      </widget>
+     </item>
+     <item row="2" column="2">
+      <widget class="QDoubleSpinBox" name="iRightAcceleration">
+       <property name="suffix">
+        <string/>
+       </property>
+       <property name="decimals">
+        <number>5</number>
+       </property>
+       <property name="minimum">
+        <double>0.000000000000000</double>
+       </property>
+       <property name="maximum">
+        <double>4000000.000000000000000</double>
+       </property>
+      </widget>
+     </item>
+     <item row="3" column="0">
+      <widget class="QLabel" name="lDeceleration">
+       <property name="text">
+        <string>Deceleration</string>
+       </property>
+      </widget>
+     </item>
+     <item row="3" column="1">
+      <widget class="QDoubleSpinBox" name="iLeftDeceleration">
+       <property name="suffix">
+        <string/>
+       </property>
+       <property name="decimals">
+        <number>5</number>
+       </property>
+       <property name="minimum">
+        <double>0.000000000000000</double>
+       </property>
+       <property name="maximum">
+        <double>4000000.000000000000000</double>
+       </property>
+      </widget>
+     </item>
+     <item row="3" column="2">
+      <widget class="QDoubleSpinBox" name="iRightDeceleration">
+       <property name="suffix">
+        <string/>
+       </property>
+       <property name="decimals">
+        <number>5</number>
+       </property>
+       <property name="minimum">
+        <double>0.000000000000000</double>
+       </property>
+       <property name="maximum">
+        <double>4000000.000000000000000</double>
+       </property>
+      </widget>
+     </item>
+     <item row="4" column="0">
+      <widget class="QLabel" name="lDistance">
+       <property name="text">
+        <string>Distance</string>
+       </property>
+      </widget>
+     </item>
+     <item row="4" column="1">
+      <widget class="QDoubleSpinBox" name="iLeftDistance">
+       <property name="suffix">
+        <string/>
+       </property>
+       <property name="decimals">
+        <number>5</number>
+       </property>
+       <property name="minimum">
+        <double>0.000000000000000</double>
+       </property>
+       <property name="maximum">
+        <double>4000000.000000000000000</double>
+       </property>
+      </widget>
+     </item>
+     <item row="4" column="2">
+      <widget class="QDoubleSpinBox" name="iRightDistance">
+       <property name="suffix">
+        <string/>
+       </property>
+       <property name="decimals">
+        <number>5</number>
+       </property>
+       <property name="minimum">
+        <double>0.000000000000000</double>
+       </property>
+       <property name="maximum">
+        <double>4000000.000000000000000</double>
+       </property>
+      </widget>
+     </item>
+     <item row="5" column="0">
+      <widget class="QLabel" name="lStatus">
+       <property name="text">
+        <string>Status</string>
+       </property>
+      </widget>
+     </item>
+     <item row="6" column="0">
+      <widget class="QLabel" name="lSpeedStatus">
+       <property name="text">
+        <string>Speed</string>
+       </property>
+      </widget>
+     </item>
+     <item row="6" column="1">
+      <widget class="QLineEdit" name="sLeftSpeed">
+       <property name="readOnly">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+     <item row="6" column="2">
+      <widget class="QLineEdit" name="sRightSpeed">
+       <property name="readOnly">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+     <item row="7" column="0">
+      <widget class="QLabel" name="lEncoderStatus">
+       <property name="text">
+        <string>Encoder</string>
+       </property>
+      </widget>
+     </item>
+     <item row="7" column="1">
+      <widget class="QLineEdit" name="sLeftEncoder">
+       <property name="readOnly">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+     <item row="7" column="2">
+      <widget class="QLineEdit" name="sRightEncoder">
+       <property name="readOnly">
+        <bool>true</bool>
        </property>
       </widget>
      </item>
     </layout>
    </item>
    <item>
-    <spacer name="verticalSpacer">
-     <property name="orientation">
-      <enum>Qt::Vertical</enum>
-     </property>
-     <property name="sizeHint" stdset="0">
-      <size>
-       <width>20</width>
-       <height>44</height>
-      </size>
-     </property>
-    </spacer>
-   </item>
-   <item>
     <layout class="QHBoxLayout" name="horizontalLayout">
+     <item>
+      <spacer name="horizontalSpacer">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>40</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+     <item>
+      <widget class="QCheckBox" name="cbClear">
+       <property name="text">
+        <string>Clear</string>
+       </property>
+      </widget>
+     </item>
      <item>
       <widget class="QPushButton" name="btnStart">
        <property name="text">
@@ -94,6 +274,19 @@
       </widget>
      </item>
     </layout>
+   </item>
+   <item>
+    <spacer name="verticalSpacer">
+     <property name="orientation">
+      <enum>Qt::Vertical</enum>
+     </property>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>20</width>
+       <height>13</height>
+      </size>
+     </property>
+    </spacer>
    </item>
   </layout>
  </widget>

@@ -3,6 +3,7 @@
 AccessModifierOffset: -4
 AlignAfterOpenBracket: Align
 AlignOperands: Align
+AllowShortLambdasOnASingleLine: Inline
 AlwaysBreakTemplateDeclarations: No
 BreakBeforeBraces: Allman
 BreakConstructorInitializers: BeforeComma
@@ -15,6 +16,7 @@ ForEachMacros:
   - BOOST_FOREACH
 IndentCaseLabels: true
 IndentWidth: 4
+LambdaBodyIndentation: OuterScope
 MaxEmptyLinesToKeep: 1
 NamespaceIndentation: All
 PointerAlignment: Left
