@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Generic helper that subscribes to SepiaComm topics and decodes protobuf payloads.
+Generic helper that subscribes to ZeroMQ topics defined in sepia.yaml (or the
+SEPIA_CONFIG override) and decodes protobuf payloads. No SepiaComm dependency.
 Usage example:
   python python/receive_message.py --module roboclaw_msgs_pb2 --message Move --count 5
 """
@@ -12,7 +13,7 @@ from typing import Dict, Iterable, List
 
 from google.protobuf.json_format import MessageToDict
 
-import sepia_comm
+from config_loader import load_configuration
 
 try:
     import zmq
@@ -42,8 +43,8 @@ def resolve_messages( module_name: str, message_names: Iterable[ str ] ) -> Dict
 
 
 def receive_messages( subscription_map: Dict[ str, object ], max_messages: int, timeout_seconds: float ) -> List[ Dict[ str, object ] ]:
-    cfg = sepia_comm.load_configuration()
-    endpoint = cfg.publisher_url
+    cfg = load_configuration()
+    endpoint = cfg["publisher_url"]
 
     context = zmq.Context.instance()
     socket = context.socket( zmq.SUB )
@@ -102,7 +103,7 @@ def receive_messages( subscription_map: Dict[ str, object ], max_messages: int, 
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser( description="Receive SepiaComm protobuf messages over ZeroMQ." )
+    parser = argparse.ArgumentParser( description="Receive protobuf messages over raw ZeroMQ (sepia.yaml config)." )
     parser.add_argument( "--module", default="roboclaw_msgs_pb2", help="Python module containing generated protobufs." )
     parser.add_argument(
         "--message",

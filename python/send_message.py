@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
-Generic helper that publishes protobuf messages over SepiaComm.
+Generic helper that publishes protobuf messages over ZeroMQ endpoints defined
+in sepia.yaml (or the SEPIA_CONFIG override). This removes the dependency on
+the C++ SepiaComm library.
 Usage example:
   python python/send_message.py --module roboclaw_msgs_pb2 --message Move --fields left_motor=500,right_motor=-500
 """
@@ -14,7 +16,14 @@ from typing import Any, Dict, Iterable, List
 
 from google.protobuf.json_format import MessageToDict
 
-import sepia_comm
+from config_loader import load_configuration
+
+try:
+    import zmq
+except ModuleNotFoundError as exc:  # pragma: no cover
+    raise SystemExit(
+        "Missing dependency pyzmq. Install it with `pip install pyzmq` or your distro's package manager."
+    ) from exc
 
 
 def parse_field_arg( field: str ):
@@ -70,26 +79,29 @@ def apply_fields( msg, field_pairs: Iterable[str] ):
 
 
 def send_protobuf_message( msg, warmup_seconds: float = 0.1 ) -> Dict[str, Any]:
-    cfg = sepia_comm.load_configuration()
-    sepia_comm.init_sender()
+    cfg = load_configuration()
+    context = zmq.Context.instance()
+    socket = context.socket( zmq.PUB )
+    socket.connect( cfg["subscriber_url"] )
     if warmup_seconds > 0:
         time.sleep( warmup_seconds )
     payload = msg.SerializeToString()
     topic = msg.DESCRIPTOR.full_name
     try:
-        sepia_comm.raw_send(topic, payload)
+        socket.send_string( topic, zmq.SNDMORE )
+        socket.send( payload )
         summary = MessageToDict(
             msg,
             preserving_proto_field_name=True,
             including_default_value_fields=True,
         ) or {}
-        return {"topic": topic, "summary": summary, "endpoint": cfg.subscriber_url}
+        return {"topic": topic, "summary": summary, "endpoint": cfg["subscriber_url"]}
     finally:
-        sepia_comm.destroy_sender()
+        socket.close()
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Send arbitrary protobuf commands over SepiaComm.")
+    parser = argparse.ArgumentParser(description="Send protobuf commands over raw ZeroMQ (sepia.yaml config).")
     parser.add_argument("--module", default="roboclaw_msgs_pb2", help="Python module containing generated protobufs.")
     parser.add_argument("--message", default="Move", help="Message class inside the provided module.")
     parser.add_argument(
