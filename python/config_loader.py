@@ -1,19 +1,7 @@
-"""
-Utility helpers for loading Sepia-style YAML configuration without depending on
-the C++ SepiaComm library.
-"""
-
 import os
 from pathlib import Path
 from typing import Dict
-
-try:
-    import yaml
-except ModuleNotFoundError as exc:  # pragma: no cover
-    raise SystemExit(
-        "Missing dependency PyYAML. Install it with `pip install pyyaml` or "
-        "your distro's python3-yaml package."
-    ) from exc
+import yaml
 
 DEFAULT_CONFIG = "sepia.yaml"
 
@@ -27,11 +15,6 @@ def _read_yaml( path: Path ) -> Dict:
 
 
 def load_configuration() -> Dict[ str, object ]:
-    """
-    Mimics sepia::comm2::Global::loadConfiguration by reading SEPIA_CONFIG or
-    falling back to `sepia.yaml`. Missing fields default to the hardcoded values
-    used by the C++ implementation.
-    """
     config_path = os.environ.get( "SEPIA_CONFIG", DEFAULT_CONFIG )
     if not config_path:
         config_path = DEFAULT_CONFIG
