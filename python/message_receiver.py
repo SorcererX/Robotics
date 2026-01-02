@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Lightweight subscriber for protobuf messages over ZeroMQ (sepia.yaml config)."""
 
-from typing import Any, Dict, List, Type
+from typing import Any, Callable, Dict, List, Tuple, Type
 
 from config_loader import load_configuration
 
@@ -47,12 +47,23 @@ def get_config() -> Dict[str, Any]:
 
 
 def add_subscription( message_cls: Type ) -> str:
-    """Register a message class to subscribe to; applies to existing socket if present."""
+    """Register a protobuf message class to subscribe to; applies to existing socket if present."""
     global _SUBSCRIPTION_MAP, _RECEIVER_SOCKET
     if _SUBSCRIPTION_MAP is None:
         _SUBSCRIPTION_MAP = {}
     topic = message_cls.DESCRIPTOR.full_name
-    _SUBSCRIPTION_MAP[ topic ] = message_cls
+    _SUBSCRIPTION_MAP[ topic ] = ( "protobuf", message_cls )
+    if _RECEIVER_SOCKET is not None:
+        _RECEIVER_SOCKET.setsockopt_string( zmq.SUBSCRIBE, topic )
+    return topic
+
+
+def add_flatbuffer_subscription( topic: str, decode_fn: Callable[[ bytes ], Any] ) -> str:
+    """Register a FlatBuffers topic with a decode function; applies to existing socket if present."""
+    global _SUBSCRIPTION_MAP, _RECEIVER_SOCKET
+    if _SUBSCRIPTION_MAP is None:
+        _SUBSCRIPTION_MAP = {}
+    _SUBSCRIPTION_MAP[ topic ] = ( "flatbuffer", decode_fn )
     if _RECEIVER_SOCKET is not None:
         _RECEIVER_SOCKET.setsockopt_string( zmq.SUBSCRIBE, topic )
     return topic
@@ -104,12 +115,22 @@ def receive_messages( max_messages: int = 1, timeout_seconds: float = 5.0 ) -> L
             break
 
         base_topic = topic.split( ",", 1 )[ 0 ]
-        message_cls = _SUBSCRIPTION_MAP.get( base_topic )
-        if message_cls is None:
+        entry = _SUBSCRIPTION_MAP.get( base_topic )
+        if entry is None:
             continue
-
-        message = message_cls()
-        message.ParseFromString( payload )
+        message = None
+        if isinstance( entry, tuple ) and len( entry ) == 2:
+            kind, handler = entry
+            if kind == "protobuf":
+                message = handler()
+                message.ParseFromString( payload )
+            elif kind == "flatbuffer":
+                message = handler( payload )
+        else:
+            message = entry()
+            message.ParseFromString( payload )
+        if message is None:
+            continue
 
         received.append( message )
 

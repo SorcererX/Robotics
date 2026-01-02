@@ -59,3 +59,35 @@ def send_protobuf_message( msg ) -> Dict[str, Any]:
         return True
     except Exception:
         return False
+
+
+def send_flatbuffer_message( msg ) -> bool:
+    """Pack and send a FlatBuffers object using its GetFullyQualifiedName()."""
+    if _SENDER_SOCKET is None or _CONFIG_CACHE is None:
+        return False
+    if not ( hasattr( msg, "GetFullyQualifiedName" ) and hasattr( msg, "Pack" ) ):
+        raise TypeError( "FlatBuffers messages must provide GetFullyQualifiedName() and Pack()." )
+    try:
+        import flatbuffers
+    except ModuleNotFoundError as exc:
+        raise SystemExit(
+            "Missing dependency flatbuffers. Install it with `pip install flatbuffers` or your distro's package manager."
+        ) from exc
+    try:
+        builder = flatbuffers.Builder( 256 )
+        offset = msg.Pack( builder )
+        builder.Finish( offset )
+        socket = _SENDER_SOCKET
+        socket.send_string( msg.GetFullyQualifiedName(), zmq.SNDMORE )
+        socket.send( builder.Output() )
+        return True
+    except Exception:
+        return False
+
+
+def send_message( msg ) -> bool:
+    if hasattr( msg, "SerializeToString" ) and hasattr( msg, "DESCRIPTOR" ):
+        return send_protobuf_message( msg )
+    if hasattr( msg, "GetFullyQualifiedName" ) and hasattr( msg, "Pack" ):
+        return send_flatbuffer_message( msg )
+    raise TypeError( "Unsupported message type for send_message()." )
