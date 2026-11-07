@@ -288,9 +288,10 @@ void SettingsWidget::updateChanged()
         for( const auto& [ field, box ] : a_boxes )
         {
             const auto* reflection = a_read.GetReflection();
-            double read = field->cpp_type() == FieldDescriptor::CPPTYPE_FLOAT ? reflection->GetFloat( a_read, field )
-                        : field->cpp_type() == FieldDescriptor::CPPTYPE_INT32 ? reflection->GetInt32( a_read, field )
-                                                                              : reflection->GetUInt32( a_read, field );
+            // Each branch is converted to double, a plain ?: would turn negative int32 values into large unsigned ones.
+            double read = field->cpp_type() == FieldDescriptor::CPPTYPE_FLOAT ? static_cast< double >( reflection->GetFloat( a_read, field ) )
+                        : field->cpp_type() == FieldDescriptor::CPPTYPE_INT32 ? static_cast< double >( reflection->GetInt32( a_read, field ) )
+                                                                              : static_cast< double >( reflection->GetUInt32( a_read, field ) );
             bool changed = std::abs( box->value() - read ) > ( field->cpp_type() == FieldDescriptor::CPPTYPE_FLOAT ? 0.00002 : 0.5 );
             box->setStyleSheet( changed ? "background-color: #ffd27f; color: black;" : "" );
         }
