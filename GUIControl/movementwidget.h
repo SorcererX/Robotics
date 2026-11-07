@@ -3,6 +3,7 @@
 #include <QWidget>
 #include "roboclaw_msgs.pb.h"
 #include <QSpinBox>
+#include <functional>
 #include <sepia/comm2/observer.h>
 
 namespace Ui
@@ -15,22 +16,28 @@ class MovementWidget : public QWidget,
 {
     Q_OBJECT
 public:
-    MovementWidget( QWidget* a_parent );
+    /// Which commands the widget shows, Status and Stop are always shown.
+    enum class Commands
+    {
+        Cm,
+        Raw
+    };
+
+    MovementWidget( QWidget* a_parent, Commands a_commands );
     ~MovementWidget();
 
 protected:
+    void showEvent( QShowEvent* a_event ) override;
+    void hideEvent( QHideEvent* a_event ) override;
     void receive( const roboclaw_msgs::MoveStatus& a_message );
     void addConnect( QDoubleSpinBox* a_object, const std::function< void( int32_t ) >& a_lambda );
     void linkPercentToRaw( QDoubleSpinBox* a_percent, QSpinBox* a_raw );
-    template< typename CountsBox >
-    void linkCountsToCm( CountsBox* a_counts, QDoubleSpinBox* a_cm );
     static QString errorText( uint32_t a_error );
 
 private:
     Ui::MovementWidget* m_ui;
     roboclaw_msgs::MovePosition m_msg;
     QTimer* m_statusRequestTimer;
-    bool m_converting = false;
 };
 
 #endif // MOVEMENT_WIDGET_H

@@ -10,18 +10,21 @@
 #include <utility>
 #include <sepia/comm2/dispatcher.h>
 
-namespace
-{
-    // One turn of the 60T XL pulley moves the belt 60 * 5.08 mm, and the encoder gives 2442.96 counts per output turn.
-    constexpr double countsPerCm = 2442.96 / 30.48;
-}
-
-MovementWidget::MovementWidget( QWidget* a_parent )
+MovementWidget::MovementWidget( QWidget* a_parent, Commands a_commands )
     : QWidget( a_parent )
     , m_ui( new Ui::MovementWidget )
     , m_statusRequestTimer( new QTimer( this ) )
 {
     m_ui->setupUi( this );
+
+    // The other page is taken out, so it does not make the widget as large as both.
+    const bool cm = a_commands == Commands::Cm;
+    QWidget* unused = cm ? m_ui->pageRaw : m_ui->pageCm;
+    m_ui->stackCommands->removeWidget( unused );
+    unused->hide();
+    // The cm encoders are on the cm page, the raw ones below Status.
+    m_ui->gbEncoders->setVisible( !cm );
+
 
     addConnect( m_ui->iLeftSpeed, std::bind_front( &roboclaw_msgs::MovePosition::set_left_speed, &m_msg ) );
     addConnect( m_ui->iLeftAcceleration, std::bind_front( &roboclaw_msgs::MovePosition::set_left_acceleration, &m_msg ) );
@@ -31,21 +34,6 @@ MovementWidget::MovementWidget( QWidget* a_parent )
     addConnect( m_ui->iRightAcceleration, std::bind_front( &roboclaw_msgs::MovePosition::set_right_acceleration, &m_msg ) );
     addConnect( m_ui->iRightDeceleration, std::bind_front( &roboclaw_msgs::MovePosition::set_right_deceleration, &m_msg ) );
     addConnect( m_ui->iRightDistance, std::bind_front( &roboclaw_msgs::MovePosition::set_right_distance, &m_msg ) );
-
-    // Each distance, speed and acceleration can also be entered in cm.
-    linkCountsToCm( m_ui->iLeftSpeed, m_ui->iLeftSpeedCm );
-    linkCountsToCm( m_ui->iRightSpeed, m_ui->iRightSpeedCm );
-    linkCountsToCm( m_ui->iLeftAcceleration, m_ui->iLeftAccelerationCm );
-    linkCountsToCm( m_ui->iRightAcceleration, m_ui->iRightAccelerationCm );
-    linkCountsToCm( m_ui->iLeftDeceleration, m_ui->iLeftDecelerationCm );
-    linkCountsToCm( m_ui->iRightDeceleration, m_ui->iRightDecelerationCm );
-    linkCountsToCm( m_ui->iLeftDistance, m_ui->iLeftDistanceCm );
-    linkCountsToCm( m_ui->iRightDistance, m_ui->iRightDistanceCm );
-    linkCountsToCm( m_ui->iLeftMoveSpeed, m_ui->iLeftMoveSpeedCm );
-    linkCountsToCm( m_ui->iRightMoveSpeed, m_ui->iRightMoveSpeedCm );
-    linkCountsToCm( m_ui->iMoveAcceleration, m_ui->iMoveAccelerationCm );
-    linkCountsToCm( m_ui->iLeftEncoder, m_ui->iLeftEncoderCm );
-    linkCountsToCm( m_ui->iRightEncoder, m_ui->iRightEncoderCm );
 
     connect( m_ui->cbClear, &QCheckBox::clicked, this, [ this ]()
     { m_msg.set_clear_buffer( m_ui->cbClear->isChecked() ); } );
@@ -105,13 +93,76 @@ MovementWidget::MovementWidget( QWidget* a_parent )
         sepia::comm2::Dispatcher< roboclaw_msgs::MoveSpeed >::send( &msg );
     } );
 
+    // The cm commands are converted to counts by MovementControl.
+    connect( m_ui->btnMoveSpeedCm, &QPushButton::clicked, this, [ this ]()
+    {
+        roboclaw_msgs::MoveSpeedCm msg;
+        msg.set_left_speed_cm_s( m_ui->cLeftMoveSpeed->value() );
+        msg.set_right_speed_cm_s( m_ui->cRightMoveSpeed->value() );
+        msg.set_acceleration_cm_s2( m_ui->cMoveAcceleration->value() );
+        std::cout << "Sending: " << msg.ShortDebugString() << std::endl;
+        sepia::comm2::Dispatcher< roboclaw_msgs::MoveSpeedCm >::send( &msg );
+    } );
+
+    connect( m_ui->btnMovePositionCm, &QPushButton::clicked, this, [ this ]()
+    {
+        roboclaw_msgs::MovePositionCm msg;
+        msg.set_left_speed_cm_s( m_ui->cLeftSpeed->value() );
+        msg.set_left_acceleration_cm_s2( m_ui->cLeftAcceleration->value() );
+        msg.set_left_deceleration_cm_s2( m_ui->cLeftDeceleration->value() );
+        msg.set_left_position_cm( m_ui->cLeftPosition->value() );
+        msg.set_right_speed_cm_s( m_ui->cRightSpeed->value() );
+        msg.set_right_acceleration_cm_s2( m_ui->cRightAcceleration->value() );
+        msg.set_right_deceleration_cm_s2( m_ui->cRightDeceleration->value() );
+        msg.set_right_position_cm( m_ui->cRightPosition->value() );
+        msg.set_clear_buffer( m_ui->cbClearCm->isChecked() );
+        std::cout << "Sending: " << msg.ShortDebugString() << std::endl;
+        sepia::comm2::Dispatcher< roboclaw_msgs::MovePositionCm >::send( &msg );
+    } );
+
+    connect( m_ui->btnMoveDistanceCm, &QPushButton::clicked, this, [ this ]()
+    {
+        roboclaw_msgs::MoveDistanceCm msg;
+        msg.set_left_speed_cm_s( m_ui->cLeftSpeed->value() );
+        msg.set_left_acceleration_cm_s2( m_ui->cLeftAcceleration->value() );
+        msg.set_left_deceleration_cm_s2( m_ui->cLeftDeceleration->value() );
+        msg.set_left_distance_cm( m_ui->cLeftDistance->value() );
+        msg.set_right_speed_cm_s( m_ui->cRightSpeed->value() );
+        msg.set_right_acceleration_cm_s2( m_ui->cRightAcceleration->value() );
+        msg.set_right_deceleration_cm_s2( m_ui->cRightDeceleration->value() );
+        msg.set_right_distance_cm( m_ui->cRightDistance->value() );
+        msg.set_clear_buffer( m_ui->cbClearCm->isChecked() );
+        std::cout << "Sending: " << msg.ShortDebugString() << std::endl;
+        sepia::comm2::Dispatcher< roboclaw_msgs::MoveDistanceCm >::send( &msg );
+    } );
+
+    connect( m_ui->btnSetEncodersCm, &QPushButton::clicked, this, [ this ]()
+    {
+        roboclaw_msgs::SetEncodersCm msg;
+        msg.set_left_position_cm( m_ui->cLeftEncoder->value() );
+        msg.set_right_position_cm( m_ui->cRightEncoder->value() );
+        sepia::comm2::Dispatcher< roboclaw_msgs::SetEncodersCm >::send( &msg );
+    } );
+
     connect( m_statusRequestTimer, &QTimer::timeout, this, [ this ]()
     {
         roboclaw_msgs::RequestStatus msg;
         sepia::comm2::Dispatcher< roboclaw_msgs::RequestStatus >::send( &msg );
     } );
+    // Started when the widget is shown, so only the visible tab asks for status.
     m_statusRequestTimer->setInterval( 100 );
+}
+
+void MovementWidget::showEvent( QShowEvent* a_event )
+{
+    QWidget::showEvent( a_event );
     m_statusRequestTimer->start();
+}
+
+void MovementWidget::hideEvent( QHideEvent* a_event )
+{
+    QWidget::hideEvent( a_event );
+    m_statusRequestTimer->stop();
 }
 
 void MovementWidget::receive( const roboclaw_msgs::MoveStatus& a_message )
@@ -119,20 +170,22 @@ void MovementWidget::receive( const roboclaw_msgs::MoveStatus& a_message )
     // Fields that could not be read are shown as "-".
     const auto show = []( QLineEdit* a_field, bool a_has, const QString& a_text ) { a_field->setText( a_has ? a_text : "-" ); };
     const auto scaled = []( double a_value, double a_scale, int a_decimals ) { return QString::number( a_value / a_scale, 'f', a_decimals ); };
-    const auto counts = [ & ]( QLineEdit* a_counts, QLineEdit* a_cm, bool a_has, int32_t a_value, const char* a_unit )
+    // The cm values come converted from MovementControl. One that does not convert sends no counts per cm.
+    const bool hasCm = a_message.left_counts_per_cm() > 0 && a_message.right_counts_per_cm() > 0;
+    const auto counts = [ & ]( QLineEdit* a_counts, QLineEdit* a_cm, bool a_has, int32_t a_value, double a_cmValue, const char* a_unit )
     {
         show( a_counts, a_has, QString::number( a_value ) );
-        show( a_cm, a_has, scaled( a_value, countsPerCm, 2 ) + " " + a_unit );
+        show( a_cm, a_has && hasCm, QString::number( a_cmValue, 'f', 2 ) + " " + a_unit );
     };
 
-    counts( m_ui->sLeftSpeed, m_ui->sLeftSpeedCm, true, a_message.left_speed(), "cm/s" );
-    counts( m_ui->sRightSpeed, m_ui->sRightSpeedCm, true, a_message.right_speed(), "cm/s" );
-    counts( m_ui->sLeftEncoder, m_ui->sLeftEncoderCm, true, a_message.left_encoder(), "cm" );
-    counts( m_ui->sRightEncoder, m_ui->sRightEncoderCm, true, a_message.right_encoder(), "cm" );
-    counts( m_ui->sLeftSpeedError, m_ui->sLeftSpeedErrorCm, a_message.has_left_speed_error(), a_message.left_speed_error(), "cm/s" );
-    counts( m_ui->sRightSpeedError, m_ui->sRightSpeedErrorCm, a_message.has_right_speed_error(), a_message.right_speed_error(), "cm/s" );
-    counts( m_ui->sLeftPositionError, m_ui->sLeftPositionErrorCm, a_message.has_left_position_error(), a_message.left_position_error(), "cm" );
-    counts( m_ui->sRightPositionError, m_ui->sRightPositionErrorCm, a_message.has_right_position_error(), a_message.right_position_error(), "cm" );
+    counts( m_ui->sLeftSpeed, m_ui->sLeftSpeedCm, true, a_message.left_speed(), a_message.left_speed_cm_s(), "cm/s" );
+    counts( m_ui->sRightSpeed, m_ui->sRightSpeedCm, true, a_message.right_speed(), a_message.right_speed_cm_s(), "cm/s" );
+    counts( m_ui->sLeftEncoder, m_ui->sLeftEncoderCm, true, a_message.left_encoder(), a_message.left_position_cm(), "cm" );
+    counts( m_ui->sRightEncoder, m_ui->sRightEncoderCm, true, a_message.right_encoder(), a_message.right_position_cm(), "cm" );
+    counts( m_ui->sLeftSpeedError, m_ui->sLeftSpeedErrorCm, a_message.has_left_speed_error(), a_message.left_speed_error(), a_message.left_speed_error_cm_s(), "cm/s" );
+    counts( m_ui->sRightSpeedError, m_ui->sRightSpeedErrorCm, a_message.has_right_speed_error(), a_message.right_speed_error(), a_message.right_speed_error_cm_s(), "cm/s" );
+    counts( m_ui->sLeftPositionError, m_ui->sLeftPositionErrorCm, a_message.has_left_position_error(), a_message.left_position_error(), a_message.left_position_error_cm(), "cm" );
+    counts( m_ui->sRightPositionError, m_ui->sRightPositionErrorCm, a_message.has_right_position_error(), a_message.right_position_error(), a_message.right_position_error_cm(), "cm" );
     const auto buffer = []( uint32_t a_value )
     {
         if( a_value == 128 )
@@ -151,29 +204,6 @@ void MovementWidget::receive( const roboclaw_msgs::MoveStatus& a_message )
     show( m_ui->sBattery, a_message.has_main_battery_voltage(), scaled( a_message.main_battery_voltage(), 10.0, 1 ) );
     show( m_ui->sTemperature, a_message.has_temperature(), scaled( a_message.temperature(), 10.0, 1 ) );
     m_ui->sErrors->setText( a_message.has_error() ? errorText( a_message.error() ) : "-" );
-}
-
-template< typename CountsBox >
-void MovementWidget::linkCountsToCm( CountsBox* a_counts, QDoubleSpinBox* a_cm )
-{
-    using Value = decltype( a_counts->value() );
-    // The counts box is not blocked, as the messages are built from its signal, so a flag stops it from rounding the cm being typed.
-    connect( a_counts, static_cast< void ( CountsBox::* )( Value ) >( &CountsBox::valueChanged ), this, [ this, a_cm ]( Value a_value )
-    {
-        if( !m_converting )
-        {
-            const QSignalBlocker blocker( a_cm );
-            a_cm->setValue( a_value / countsPerCm );
-        }
-    } );
-    connect( a_cm, static_cast< void ( QDoubleSpinBox::* )( double ) >( &QDoubleSpinBox::valueChanged ), this, [ this, a_counts ]( double a_value )
-    {
-        m_converting = true;
-        a_counts->setValue( static_cast< Value >( std::lround( a_value * countsPerCm ) ) );
-        m_converting = false;
-    } );
-    const QSignalBlocker blocker( a_cm );
-    a_cm->setValue( a_counts->value() / countsPerCm );
 }
 
 void MovementWidget::linkPercentToRaw( QDoubleSpinBox* a_percent, QSpinBox* a_raw )

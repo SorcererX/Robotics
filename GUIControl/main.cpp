@@ -17,14 +17,17 @@ int main( int argc, char** argv )
     QMainWindow window;
     window.setWindowTitle( "RoboClaw" );
     auto* tabs = new QTabWidget( &window );
-    MovementWidget* movementWidget = new MovementWidget( tabs );
+    auto* movementCm = new MovementWidget( tabs, MovementWidget::Commands::Cm );
+    auto* movementRaw = new MovementWidget( tabs, MovementWidget::Commands::Raw );
     SettingsWidget* settingsWidget = new SettingsWidget( tabs );
-    tabs->addTab( movementWidget, "Movement" );
+    tabs->addTab( movementCm, "Movement (cm)" );
+    tabs->addTab( movementRaw, "Movement (raw)" );
     tabs->addTab( settingsWidget, "Settings" );
     window.setCentralWidget( tabs );
     window.show();
 
-    sepia::comm2::QtMessageReceiver receiver( movementWidget, movementWidget );
+    sepia::comm2::QtMessageReceiver receiverCm( movementCm, movementCm );
+    sepia::comm2::QtMessageReceiver receiverRaw( movementRaw, movementRaw );
     sepia::comm2::QtMessageReceiver settingsReceiver( settingsWidget, settingsWidget );
 
     return app.exec();

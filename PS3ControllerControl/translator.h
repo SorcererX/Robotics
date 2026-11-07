@@ -14,5 +14,6 @@ public:
 
 protected:
     void own_thread() override;
-    int32_t m_scalingFactor{ -31 };
+    // cm/s at full stick.
+    double m_maxSpeed{ 10 };
 };

@@ -4,10 +4,70 @@
 #include <sepia/comm2/receiver.h>
 #include <sepia/comm2/scopedmessagesender.h>
 #include <algorithm>
+#include <cmath>
+#include <cstdlib>
+#include <filesystem>
+#include <limits>
+#include <yaml-cpp/yaml.h>
+
+namespace
+{
+    // One turn of the 60T XL pulley moves the belt 60 * 5.08 mm, and the encoder gives 2442.96 counts per output turn.
+    constexpr double defaultCountsPerCm = 2442.96 / 30.48;
+
+    // Reads movement_control.counts_per_cm, or left_ and right_counts_per_cm, from the same file SepiaComm uses.
+    std::pair< double, double > loadCountsPerCm()
+    {
+        const char* configured = std::getenv( "SEPIA_CONFIG" );
+        const std::string path = configured != nullptr && *configured != '\0' ? configured : "sepia.yaml";
+        double left = defaultCountsPerCm;
+        double right = defaultCountsPerCm;
+        std::error_code ec;
+        if( std::filesystem::exists( path, ec ) )
+        {
+            try
+            {
+                if( const YAML::Node node = YAML::LoadFile( path )[ "movement_control" ] )
+                {
+                    left = right = node[ "counts_per_cm" ].as< double >( defaultCountsPerCm );
+                    left = node[ "left_counts_per_cm" ].as< double >( left );
+                    right = node[ "right_counts_per_cm" ].as< double >( right );
+                }
+            }
+            catch( const YAML::Exception& ex )
+            {
+                std::cerr << "Unable to read counts_per_cm from '" << path << "': " << ex.what() << std::endl;
+            }
+        }
+        if( !( left > 0 ) || !( right > 0 ) )
+        {
+            std::cerr << "counts_per_cm must be above 0, using " << defaultCountsPerCm << "." << std::endl;
+            left = right = defaultCountsPerCm;
+        }
+        return { left, right };
+    }
+
+    int32_t toCounts( double a_cm, double a_countsPerCm )
+    {
+        const double counts = std::round( a_cm * a_countsPerCm );
+        return static_cast< int32_t >( std::clamp( counts, static_cast< double >( std::numeric_limits< int32_t >::min() ),
+                                                   static_cast< double >( std::numeric_limits< int32_t >::max() ) ) );
+    }
+
+    // Speeds, accelerations and decelerations of position moves have no direction.
+    int32_t toCountsMagnitude( double a_cm, double a_countsPerCm )
+    {
+        return std::abs( toCounts( a_cm, a_countsPerCm ) );
+    }
+}
 
 RoboClawInterface::RoboClawInterface()
     : m_motor( "/dev/ttyACM0", 5, 0x80 )
 {
+    const auto [ left, right ] = loadCountsPerCm();
+    m_countsPerCm = { .left = left, .right = right };
+    std::cout << "Counts per cm left: " << left << " right: " << right << std::endl;
+
     m_motor.begin( B115200 );
 
     const auto printVelocityPID = []( const char* a_name, const auto& a_pid )
@@ -42,6 +102,7 @@ void RoboClawInterface::own_thread()
 void RoboClawInterface::receive( const roboclaw_msgs::Move& a_msg )
 {
     std::cout << a_msg.ShortDebugString() << std::flush;
+    m_target.reset();
 
     bool left_ok = false;
     bool right_ok = false;
@@ -77,6 +138,11 @@ void RoboClawInterface::receive( const roboclaw_msgs::Move& a_msg )
 
 void RoboClawInterface::receive( const roboclaw_msgs::MovePosition& a_msg )
 {
+    movePosition( a_msg );
+}
+
+void RoboClawInterface::movePosition( const roboclaw_msgs::MovePosition& a_msg )
+{
     std::cout << a_msg.ShortDebugString() << std::flush;
     bool result = m_motor.speedAccelDeccelPositionM1M2(
         a_msg.left_acceleration(),
@@ -90,11 +156,20 @@ void RoboClawInterface::receive( const roboclaw_msgs::MovePosition& a_msg )
         a_msg.clear_buffer() );
 
     std::cout << " Move Position result: " << result << std::endl;
+    if( result )
+    {
+        m_target = Targets{ .left = a_msg.left_distance(), .right = a_msg.right_distance() };
+    }
+    else
+    {
+        m_target.reset();
+    }
 }
 
 void RoboClawInterface::receive( const roboclaw_msgs::MoveSpeed& a_msg )
 {
     std::cout << a_msg.ShortDebugString() << std::flush;
+    m_target.reset();
     bool result = m_motor.speedAccelM1M2( a_msg.acceleration(), a_msg.left_speed(), a_msg.right_speed() );
 
     std::cout << " Move Speed result: " << result << std::endl;
@@ -117,6 +192,12 @@ void RoboClawInterface::receive( const roboclaw_msgs::RequestStatus& a_msg )
     msg.set_right_encoder( static_cast< int32_t >( encoders->m2 ) );
     msg.set_left_speed( speeds->m1 );
     msg.set_right_speed( speeds->m2 );
+    msg.set_left_counts_per_cm( m_countsPerCm.left );
+    msg.set_right_counts_per_cm( m_countsPerCm.right );
+    msg.set_left_position_cm( msg.left_encoder() / m_countsPerCm.left );
+    msg.set_right_position_cm( msg.right_encoder() / m_countsPerCm.right );
+    msg.set_left_speed_cm_s( msg.left_speed() / m_countsPerCm.left );
+    msg.set_right_speed_cm_s( msg.right_speed() / m_countsPerCm.right );
 
     // The rest is optional, so one failed read does not hide the others.
     if( const auto error = m_motor.readError() )
@@ -145,11 +226,15 @@ void RoboClawInterface::receive( const roboclaw_msgs::RequestStatus& a_msg )
     {
         msg.set_left_speed_error( errors->m1 );
         msg.set_right_speed_error( errors->m2 );
+        msg.set_left_speed_error_cm_s( errors->m1 / m_countsPerCm.left );
+        msg.set_right_speed_error_cm_s( errors->m2 / m_countsPerCm.right );
     }
     if( const auto errors = m_motor.readPosErrors() )
     {
         msg.set_left_position_error( errors->m1 );
         msg.set_right_position_error( errors->m2 );
+        msg.set_left_position_error_cm( errors->m1 / m_countsPerCm.left );
+        msg.set_right_position_error_cm( errors->m2 / m_countsPerCm.right );
     }
     if( const auto buffers = m_motor.readBuffers() )
     {
@@ -162,6 +247,7 @@ void RoboClawInterface::receive( const roboclaw_msgs::RequestStatus& a_msg )
 void RoboClawInterface::receive( const roboclaw_msgs::MoveDuty& a_msg )
 {
     std::cout << a_msg.ShortDebugString() << std::flush;
+    m_target.reset();
     // The duty is sent as two's complement.
     const auto duty = []( int32_t a_duty ) { return static_cast< uint16_t >( std::clamp( a_duty, -32767, 32767 ) ); };
     bool result = m_motor.dutyAccelM1M2( duty( a_msg.left_duty() ), a_msg.left_acceleration(), duty( a_msg.right_duty() ), a_msg.right_acceleration() );
@@ -171,6 +257,7 @@ void RoboClawInterface::receive( const roboclaw_msgs::MoveDuty& a_msg )
 
 void RoboClawInterface::receive( const roboclaw_msgs::ResetEncoders& a_msg )
 {
+    m_target.reset();
     std::cout << "Reset encoders result: " << m_motor.resetEncoders() << std::endl;
 }
 
@@ -179,6 +266,82 @@ void RoboClawInterface::receive( const roboclaw_msgs::SetEncoders& a_msg )
     const bool left = m_motor.setEncM1( a_msg.left_encoder() );
     const bool right = m_motor.setEncM2( a_msg.right_encoder() );
     std::cout << a_msg.ShortDebugString() << " LEFT: " << left << " RIGHT: " << right << std::endl;
+    m_target.reset();
+}
+
+void RoboClawInterface::receive( const roboclaw_msgs::MoveSpeedCm& a_msg )
+{
+    std::cout << a_msg.ShortDebugString() << std::flush;
+    m_target.reset();
+    // The sides can have different counts per cm, so each gets its own acceleration.
+    bool result = m_motor.speedAccelM1M2Separate( toCountsMagnitude( a_msg.acceleration_cm_s2(), m_countsPerCm.left ),
+                                                  toCounts( a_msg.left_speed_cm_s(), m_countsPerCm.left ),
+                                                  toCountsMagnitude( a_msg.acceleration_cm_s2(), m_countsPerCm.right ),
+                                                  toCounts( a_msg.right_speed_cm_s(), m_countsPerCm.right ) );
+
+    std::cout << " Move Speed cm result: " << result << std::endl;
+}
+
+void RoboClawInterface::receive( const roboclaw_msgs::MovePositionCm& a_msg )
+{
+    roboclaw_msgs::MovePosition msg;
+    msg.set_left_speed( toCountsMagnitude( a_msg.left_speed_cm_s(), m_countsPerCm.left ) );
+    msg.set_left_acceleration( toCountsMagnitude( a_msg.left_acceleration_cm_s2(), m_countsPerCm.left ) );
+    msg.set_left_deceleration( toCountsMagnitude( a_msg.left_deceleration_cm_s2(), m_countsPerCm.left ) );
+    msg.set_left_distance( toCounts( a_msg.left_position_cm(), m_countsPerCm.left ) );
+    msg.set_right_speed( toCountsMagnitude( a_msg.right_speed_cm_s(), m_countsPerCm.right ) );
+    msg.set_right_acceleration( toCountsMagnitude( a_msg.right_acceleration_cm_s2(), m_countsPerCm.right ) );
+    msg.set_right_deceleration( toCountsMagnitude( a_msg.right_deceleration_cm_s2(), m_countsPerCm.right ) );
+    msg.set_right_distance( toCounts( a_msg.right_position_cm(), m_countsPerCm.right ) );
+    msg.set_clear_buffer( a_msg.clear_buffer() );
+    std::cout << a_msg.ShortDebugString() << " -> ";
+    movePosition( msg );
+}
+
+void RoboClawInterface::receive( const roboclaw_msgs::MoveDistanceCm& a_msg )
+{
+    std::cout << a_msg.ShortDebugString() << " -> ";
+    // A queued move continues from the last target, other moves start where the motors are now.
+    Targets start;
+    if( !a_msg.clear_buffer() && m_target )
+    {
+        start = *m_target;
+    }
+    else if( const auto encoders = m_motor.readEncoders() )
+    {
+        start = { .left = static_cast< int32_t >( encoders->m1 ), .right = static_cast< int32_t >( encoders->m2 ) };
+    }
+    else
+    {
+        std::cout << "encoders could not be read, the move is not sent." << std::endl;
+        return;
+    }
+
+    const auto add = []( int32_t a_start, int32_t a_distance )
+    {
+        return static_cast< int32_t >( std::clamp( static_cast< int64_t >( a_start ) + a_distance, static_cast< int64_t >( std::numeric_limits< int32_t >::min() ),
+                                                   static_cast< int64_t >( std::numeric_limits< int32_t >::max() ) ) );
+    };
+    roboclaw_msgs::MovePosition msg;
+    msg.set_left_speed( toCountsMagnitude( a_msg.left_speed_cm_s(), m_countsPerCm.left ) );
+    msg.set_left_acceleration( toCountsMagnitude( a_msg.left_acceleration_cm_s2(), m_countsPerCm.left ) );
+    msg.set_left_deceleration( toCountsMagnitude( a_msg.left_deceleration_cm_s2(), m_countsPerCm.left ) );
+    msg.set_left_distance( add( start.left, toCounts( a_msg.left_distance_cm(), m_countsPerCm.left ) ) );
+    msg.set_right_speed( toCountsMagnitude( a_msg.right_speed_cm_s(), m_countsPerCm.right ) );
+    msg.set_right_acceleration( toCountsMagnitude( a_msg.right_acceleration_cm_s2(), m_countsPerCm.right ) );
+    msg.set_right_deceleration( toCountsMagnitude( a_msg.right_deceleration_cm_s2(), m_countsPerCm.right ) );
+    msg.set_right_distance( add( start.right, toCounts( a_msg.right_distance_cm(), m_countsPerCm.right ) ) );
+    msg.set_clear_buffer( a_msg.clear_buffer() );
+    movePosition( msg );
+}
+
+void RoboClawInterface::receive( const roboclaw_msgs::SetEncodersCm& a_msg )
+{
+    roboclaw_msgs::SetEncoders msg;
+    msg.set_left_encoder( toCounts( a_msg.left_position_cm(), m_countsPerCm.left ) );
+    msg.set_right_encoder( toCounts( a_msg.right_position_cm(), m_countsPerCm.right ) );
+    std::cout << a_msg.ShortDebugString() << " -> ";
+    receive( msg );
 }
 
 namespace

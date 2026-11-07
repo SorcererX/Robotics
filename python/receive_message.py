@@ -22,6 +22,10 @@ class MovementControlHandler( MessageHandler ):
             roboclaw_msgs.MoveDuty: self.on_one_line,
             roboclaw_msgs.ResetEncoders: self.on_one_line,
             roboclaw_msgs.SetEncoders: self.on_one_line,
+            roboclaw_msgs.MoveSpeedCm: self.on_one_line,
+            roboclaw_msgs.MovePositionCm: self.on_one_line,
+            roboclaw_msgs.MoveDistanceCm: self.on_one_line,
+            roboclaw_msgs.SetEncodersCm: self.on_one_line,
             roboclaw_msgs.RequestStatus: self.on_request_status,
             roboclaw_msgs.MoveStatus: self.on_move_status,
         }
@@ -67,7 +71,7 @@ def register_movementcontrol_messages( handler=None ):
 
 
 def receive_movementcontrol_messages( max_messages: int = 1, timeout_seconds: float = 5.0 ):
-    """Receive messages relevant to MovementControl (Move, MovePosition, MoveSpeed, MoveDuty, ResetEncoders, SetEncoders, RequestStatus, MoveStatus)."""
+    """Receive messages relevant to MovementControl (Move, MovePosition, MoveSpeed, MoveDuty, ResetEncoders, SetEncoders, the Cm moves, RequestStatus, MoveStatus)."""
     register_movementcontrol_messages()
     return receive_roboclaw_messages( max_messages=max_messages, timeout_seconds=timeout_seconds )
 

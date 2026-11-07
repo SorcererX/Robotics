@@ -68,6 +68,65 @@ message MoveStatus
     // 128 is idle, 0 is running the last command, otherwise the number of commands waiting.
     optional uint32 left_buffer = 16;
     optional uint32 right_buffer = 17;
+    // The values above in cm of belt, converted by MovementControl.
+    double left_position_cm = 18;
+    double left_speed_cm_s = 19;
+    double right_position_cm = 20;
+    double right_speed_cm_s = 21;
+    optional double left_speed_error_cm_s = 22;
+    optional double right_speed_error_cm_s = 23;
+    optional double left_position_error_cm = 24;
+    optional double right_position_error_cm = 25;
+    // The conversion MovementControl uses, so clients do not need their own.
+    double left_counts_per_cm = 26;
+    double right_counts_per_cm = 27;
+}
+
+// The Cm messages use cm of belt instead of encoder counts. MovementControl converts them with
+// counts_per_cm from sepia.yaml and rounds to whole counts, 1 count is about 0.0125 cm.
+
+// Negative is backward.
+message MoveSpeedCm
+{
+    double left_speed_cm_s = 1;
+    double right_speed_cm_s = 2;
+    double acceleration_cm_s2 = 3;
+}
+
+// Moves to an absolute position, measured from where the encoders were last reset or set.
+message MovePositionCm
+{
+    double left_speed_cm_s = 1;
+    double left_acceleration_cm_s2 = 2;
+    double left_deceleration_cm_s2 = 3;
+    double left_position_cm = 4;
+    double right_speed_cm_s = 5;
+    double right_acceleration_cm_s2 = 6;
+    double right_deceleration_cm_s2 = 7;
+    double right_position_cm = 8;
+    // Replaces the running and waiting moves instead of adding this one after them.
+    bool clear_buffer = 9;
+}
+
+// Moves a distance, negative is backward. A queued move starts from the target of the move before it, so
+// errors do not add up. A move that clears the buffer, or follows any other command, starts from the encoders.
+message MoveDistanceCm
+{
+    double left_speed_cm_s = 1;
+    double left_acceleration_cm_s2 = 2;
+    double left_deceleration_cm_s2 = 3;
+    double left_distance_cm = 4;
+    double right_speed_cm_s = 5;
+    double right_acceleration_cm_s2 = 6;
+    double right_deceleration_cm_s2 = 7;
+    double right_distance_cm = 8;
+    bool clear_buffer = 9;
+}
+
+message SetEncodersCm
+{
+    double left_position_cm = 1;
+    double right_position_cm = 2;
 }
 
 message RequestStatus
