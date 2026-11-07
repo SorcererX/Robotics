@@ -21,11 +21,16 @@ public:
 protected:
     void receive( const roboclaw_msgs::MoveStatus& a_message );
     void addConnect( QDoubleSpinBox* a_object, const std::function< void( int32_t ) >& a_lambda );
+    void linkPercentToRaw( QDoubleSpinBox* a_percent, QSpinBox* a_raw );
+    template< typename CountsBox >
+    void linkCountsToCm( CountsBox* a_counts, QDoubleSpinBox* a_cm );
+    static QString errorText( uint32_t a_error );
 
 private:
     Ui::MovementWidget* m_ui;
     roboclaw_msgs::MovePosition m_msg;
     QTimer* m_statusRequestTimer;
+    bool m_converting = false;
 };
 
 #endif // MOVEMENT_WIDGET_H

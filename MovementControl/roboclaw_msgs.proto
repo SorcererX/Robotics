@@ -20,15 +20,162 @@ message MovePosition
     bool clear_buffer = 9;
 }
 
+message MoveSpeed
+{
+    // Encoder counts per second, negative is backward.
+    int32 left_speed = 1;
+    int32 right_speed = 2;
+    // Encoder counts per second per second.
+    int32 acceleration = 3;
+}
+
+// Ramps both motors to a duty cycle, without using the encoders.
+message MoveDuty
+{
+    // -32767 to 32767, where 32767 is 100 % forward.
+    int32 left_duty = 1;
+    int32 right_duty = 2;
+    // Duty change per second, 32767 ramps from 0 to 100 % in one second.
+    uint32 left_acceleration = 3;
+    uint32 right_acceleration = 4;
+}
+
 message MoveStatus
 {
     int32 left_encoder = 1;
     int32 left_speed = 2;
     int32 right_encoder = 3;
     int32 right_speed = 4;
+    // The fields below are left unset when they could not be read.
+    // Status bit field, see the controller manual.
+    optional uint32 error = 5;
+    // Units of 10 mA.
+    optional int32 left_current = 6;
+    optional int32 right_current = 7;
+    // Tenths of a volt.
+    optional uint32 main_battery_voltage = 8;
+    // -32767 to 32767, where 32767 is 100 % forward.
+    optional int32 left_pwm = 9;
+    optional int32 right_pwm = 10;
+    // Tenths of a degree Celsius.
+    optional uint32 temperature = 11;
+    // Encoder counts per second.
+    optional int32 left_speed_error = 12;
+    optional int32 right_speed_error = 13;
+    // Encoder counts.
+    optional int32 left_position_error = 14;
+    optional int32 right_position_error = 15;
+    // 128 is idle, 0 is running the last command, otherwise the number of commands waiting.
+    optional uint32 left_buffer = 16;
+    optional uint32 right_buffer = 17;
 }
 
 message RequestStatus
 {
     int32 time = 1;
+}
+
+// Sets both encoder counts to 0.
+message ResetEncoders
+{
+    int32 time = 1;
+}
+
+message SetEncoders
+{
+    int32 left_encoder = 1;
+    int32 right_encoder = 2;
+}
+
+// Settings for one motor channel.
+message MotorSettings
+{
+    float velocity_p = 1;
+    float velocity_i = 2;
+    float velocity_d = 3;
+    uint32 velocity_qpps = 4;
+    float position_p = 5;
+    float position_i = 6;
+    float position_d = 7;
+    uint32 position_max_i = 8;
+    uint32 position_deadzone = 9;
+    int32 position_min = 10;
+    int32 position_max = 11;
+    // 10 mA units.
+    uint32 max_current = 12;
+    uint32 default_duty_acceleration = 13;
+    uint32 default_duty_deceleration = 14;
+    uint32 default_speed = 15;
+    uint32 speed_error_limit = 16;
+    uint32 position_error_limit = 17;
+    uint32 encoder_mode = 18;
+    uint32 auto_duty = 19;
+    uint32 auto_timeout = 20;
+    // Fraction of 65536.
+    uint32 current_blanking = 21;
+    uint32 ctrl_mode = 22;
+    uint32 ctrl_value = 23;
+}
+
+// Settings for the whole controller. Voltages are in tenths of a volt.
+message Settings
+{
+    MotorSettings m1 = 1;
+    MotorSettings m2 = 2;
+    uint32 main_voltage_min = 3;
+    uint32 main_voltage_max = 4;
+    uint32 logic_voltage_min = 5;
+    uint32 logic_voltage_max = 6;
+    int32 main_voltage_offset = 7;
+    int32 logic_voltage_offset = 8;
+    uint32 s3_mode = 9;
+    uint32 s4_mode = 10;
+    uint32 s5_mode = 11;
+    uint32 deadband_min = 12;
+    uint32 deadband_max = 13;
+    // See command 98 in the manual, also holds the mode, baud rate and packet address.
+    uint32 config = 14;
+    uint32 pwm_mode = 15;
+    // Tenths of a second, 0 disables it.
+    uint32 serial_timeout = 16;
+}
+
+message RequestSettings
+{
+    int32 time = 1;
+}
+
+// Applies the fields that differ from the controller to RAM, they are lost at power off unless saved.
+message WriteSettings
+{
+    Settings settings = 1;
+}
+
+// Stores the settings in RAM to flash.
+message SaveSettings
+{
+    int32 time = 1;
+}
+
+// Replaces the settings in RAM with the ones in flash.
+message ReloadSettings
+{
+    int32 time = 1;
+}
+
+// Replaces the settings with the factory defaults, including the stored ones.
+message RestoreDefaultSettings
+{
+    int32 time = 1;
+}
+
+// Sent after each of the requests above with the settings read back from the controller.
+message SettingsReport
+{
+    Settings settings = 1;
+    string version = 2;
+    // What was done, for showing to the user.
+    string result = 3;
+    // Names of commands that failed. Settings of failed reads are not valid.
+    repeated string failed = 4;
 }

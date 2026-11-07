@@ -3,6 +3,7 @@
 SEPIA_CONFIG override) and decodes protobuf payloads."""
 
 import roboclaw_msgs_pb2 as roboclaw_msgs
+from google.protobuf import text_format
 
 from message_receiver import (
     MessageHandler,
@@ -17,6 +18,10 @@ class MovementControlHandler( MessageHandler ):
         self.handlers = {
             roboclaw_msgs.Move: self.on_move,
             roboclaw_msgs.MovePosition: self.on_move_position,
+            roboclaw_msgs.MoveSpeed: self.on_one_line,
+            roboclaw_msgs.MoveDuty: self.on_one_line,
+            roboclaw_msgs.ResetEncoders: self.on_one_line,
+            roboclaw_msgs.SetEncoders: self.on_one_line,
             roboclaw_msgs.RequestStatus: self.on_request_status,
             roboclaw_msgs.MoveStatus: self.on_move_status,
         }
@@ -37,11 +42,17 @@ class MovementControlHandler( MessageHandler ):
         print( f"RequestStatus time={msg.time}" )
 
     def on_move_status( self, msg: roboclaw_msgs.MoveStatus ):
+        # The optional fields are only printed when MovementControl could read them.
+        always = ( "left_encoder", "left_speed", "right_encoder", "right_speed" )
+        optional = " ".join( f"{field.name}={value}" for field, value in msg.ListFields() if field.name not in always )
         print(
             "MoveStatus "
             f"left_encoder={msg.left_encoder} left_speed={msg.left_speed} "
-            f"right_encoder={msg.right_encoder} right_speed={msg.right_speed}"
+            f"right_encoder={msg.right_encoder} right_speed={msg.right_speed} {optional}"
         )
+
+    def on_one_line( self, msg ):
+        print( f"{msg.DESCRIPTOR.name} {text_format.MessageToString( msg, as_one_line=True )}" )
 
 
 def receive_roboclaw_messages( max_messages: int = 1, timeout_seconds: float = 5.0 ):
@@ -56,7 +67,7 @@ def register_movementcontrol_messages( handler=None ):
 
 
 def receive_movementcontrol_messages( max_messages: int = 1, timeout_seconds: float = 5.0 ):
-    """Receive messages relevant to MovementControl (Move, MovePosition, RequestStatus, MoveStatus)."""
+    """Receive messages relevant to MovementControl (Move, MovePosition, MoveSpeed, MoveDuty, ResetEncoders, SetEncoders, RequestStatus, MoveStatus)."""
     register_movementcontrol_messages()
     return receive_roboclaw_messages( max_messages=max_messages, timeout_seconds=timeout_seconds )
 
