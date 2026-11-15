@@ -29,14 +29,32 @@ namespace
     // The running step and the next one are in the controller's buffer, so the next segment starts as soon as
     // the running one ends instead of when the status shows it.
     constexpr size_t queuedSteps = 2;
+    // ImuData older than this is not used.
+    constexpr auto imuTimeout = 500ms;
+    // After a turn or arc has stopped, the heading is checked when the turn rate has stayed below calmRate, in
+    // degrees per second, for calmTime, or after settleTimeout.
+    constexpr double calmRate = 1;
+    constexpr auto calmTime = 200ms;
+    constexpr auto settleTimeout = 1500ms;
+    // A correction cannot count as done before it has started, which is certain after half its expected time, or
+    // after this long for a short one since the message takes time to reach the controller.
+    constexpr auto correctionStart = 150ms;
+    // The range the measured share of a turn is kept within, so one odd measurement does not give a wild correction.
+    constexpr double minimumTurnRatio = 0.3;
+    constexpr double maximumTurnRatio = 1.5;
+    // Turns smaller than this in radians are too small to measure the slip on.
+    constexpr double minimumMeasuredTurn = 2 * std::numbers::pi / 180;
 
     struct Config
     {
         double trackWidth = 0;
         double tolerance = 1;
+        bool useImu = true;
+        double headingTolerance = 1;
+        int maxCorrections = 3;
     };
 
-    // Reads path_follower.track_width_cm and tolerance_cm from the same file SepiaComm uses.
+    // Reads path_follower from the same file SepiaComm uses.
     Config loadConfig()
     {
         const char* configured = std::getenv( "SEPIA_CONFIG" );
@@ -51,6 +69,9 @@ namespace
                 {
                     config.trackWidth = node[ "track_width_cm" ].as< double >( config.trackWidth );
                     config.tolerance = node[ "tolerance_cm" ].as< double >( config.tolerance );
+                    config.useImu = node[ "use_imu" ].as< bool >( config.useImu );
+                    config.headingTolerance = node[ "heading_tolerance_deg" ].as< double >( config.headingTolerance );
+                    config.maxCorrections = node[ "max_heading_corrections" ].as< int >( config.maxCorrections );
                 }
             }
             catch( const YAML::Exception& ex )
@@ -63,12 +84,23 @@ namespace
             std::cerr << "tolerance_cm must be above 0, using 1." << std::endl;
             config.tolerance = 1;
         }
+        if( !( config.headingTolerance > 0 ) )
+        {
+            std::cerr << "heading_tolerance_deg must be above 0, using 1." << std::endl;
+            config.headingTolerance = 1;
+        }
+        config.maxCorrections = std::max( config.maxCorrections, 0 );
         return config;
     }
 
     double toRadians( double a_degrees )
     {
         return a_degrees * std::numbers::pi / 180;
+    }
+
+    double toDegrees( double a_radians )
+    {
+        return a_radians * 180 / std::numbers::pi;
     }
 }
 
@@ -77,6 +109,9 @@ PathFollower::PathFollower()
     const Config config = loadConfig();
     m_trackWidth = config.trackWidth;
     m_tolerance = config.tolerance;
+    m_useImu = config.useImu;
+    m_headingTolerance = toRadians( config.headingTolerance );
+    m_maxCorrections = config.maxCorrections;
     if( m_trackWidth > 0 )
     {
         std::cout << "Track width: " << m_trackWidth << " cm, tolerance: " << m_tolerance << " cm" << std::endl;
@@ -85,6 +120,11 @@ PathFollower::PathFollower()
     {
         std::cout << "path_follower.track_width_cm is not set in sepia.yaml, only lines can be driven. Tolerance: " << m_tolerance << " cm"
                   << std::endl;
+    }
+    if( m_useImu )
+    {
+        std::cout << "Turns and arcs are checked with ImuData, heading tolerance: " << config.headingTolerance << " degrees, at most " << m_maxCorrections
+                  << " corrections" << std::endl;
     }
 }
 
@@ -119,7 +159,7 @@ void PathFollower::receive( const path_msgs::FollowPath& a_msg )
             m_pending.push_back( a_msg );
             return;
         }
-        if( const auto error = addSteps( a_msg, m_steps.back().target ) )
+        if( const auto error = addSteps( a_msg, m_steps.back().plannedTarget, m_steps.back().heading ) )
         {
             sendProgress( a_msg, path_msgs::PathProgress::FAILED, *error );
             return;
@@ -152,6 +192,21 @@ void PathFollower::receive( const path_msgs::StopPath& a_msg )
     }
 }
 
+void PathFollower::receive( const imu_msgs::ImuData& a_msg )
+{
+    const auto now = Clock::now();
+    m_imuHeading = toRadians( a_msg.heading_deg() );
+    if( std::abs( a_msg.yaw_rate_deg_s() ) >= calmRate )
+    {
+        m_imuCalmSince.reset();
+    }
+    else if( !m_imuCalmSince )
+    {
+        m_imuCalmSince = now;
+    }
+    m_imuTime = now;
+}
+
 void PathFollower::receive( const roboclaw_msgs::MoveStatus& a_msg )
 {
     const auto now = Clock::now();
@@ -165,13 +220,20 @@ void PathFollower::receive( const roboclaw_msgs::MoveStatus& a_msg )
         {
             m_x = m_y = m_heading = 0;
             m_posePosition = position;
+            const bool imu = now - m_imuTime < imuTimeout;
+            m_imuStart = imu ? std::optional( m_imuHeading ) : std::nullopt;
+            if( m_useImu && !imu )
+            {
+                std::cout << "No ImuData, turns and arcs are not checked on this path." << std::endl;
+            }
         }
         const auto pending = std::move( m_pending );
         m_pending.clear();
         for( const auto& path : pending )
         {
-            const Sides start = m_steps.empty() ? position : m_steps.back().target;
-            if( const auto error = addSteps( path, start ) )
+            const Sides start = m_steps.empty() ? position : m_steps.back().plannedTarget;
+            const double heading = m_steps.empty() ? 0 : m_steps.back().heading;
+            if( const auto error = addSteps( path, start, heading ) )
             {
                 sendProgress( path, path_msgs::PathProgress::FAILED, *error );
             }
@@ -192,32 +254,38 @@ void PathFollower::receive( const roboclaw_msgs::MoveStatus& a_msg )
         m_lastMoved = now;
     }
 
+    const bool stopped = std::abs( a_msg.left_speed_cm_s() ) < stoppedSpeed && std::abs( a_msg.right_speed_cm_s() ) < stoppedSpeed;
     while( !m_steps.empty() )
     {
+        Step& step = m_steps.front();
+        if( step.phase == Phase::Settling )
+        {
+            if( !settle( step, now ) )
+            {
+                break;
+            }
+            finishStep( now );
+            continue;
+        }
+
         // The belt that moves the furthest decides when the step is done, the other may hardly move.
-        const Step& step = m_steps.front();
         const bool left = std::abs( step.target.left - step.start.left ) >= std::abs( step.target.right - step.start.right );
         const double target = left ? step.target.left : step.target.right;
         const double direction = target >= ( left ? step.start.left : step.start.right ) ? 1 : -1;
         const double remaining = ( target - ( left ? position.left : position.right ) ) * direction;
-        // The last step waits for the robot to stop, the others hand over to the step queued after them.
-        const bool stopped = std::abs( a_msg.left_speed_cm_s() ) < stoppedSpeed && std::abs( a_msg.right_speed_cm_s() ) < stoppedSpeed;
-        if( remaining > m_tolerance || ( m_steps.size() == 1 && !stopped ) )
+        // A step with nothing queued after it waits for the robot to stop, the others hand over to the next step.
+        if( remaining > m_tolerance || ( m_sent == 1 && !stopped ) || now < step.notBefore )
         {
             break;
         }
-
-        if( step.lastOfPath )
+        // The next step is held back after a turn or arc, so the heading can be checked first.
+        if( step.checkHeading && m_sent == 1 && checksHeading( now ) )
         {
-            sendProgress( step, path_msgs::PathProgress::DONE );
+            step.phase = Phase::Settling;
+            step.settleStart = now;
+            break;
         }
-        m_steps.pop_front();
-        m_sent = m_sent > 0 ? m_sent - 1 : 0;
-        m_lastMoved = now;
-        if( !m_steps.empty() && m_sent > 0 )
-        {
-            sendProgress( m_steps.front(), path_msgs::PathProgress::RUNNING );
-        }
+        finishStep( now );
     }
     if( m_steps.empty() )
     {
@@ -226,7 +294,7 @@ void PathFollower::receive( const roboclaw_msgs::MoveStatus& a_msg )
     sendSteps();
 }
 
-std::optional< std::string > PathFollower::addSteps( const path_msgs::FollowPath& a_msg, Sides a_start )
+std::optional< std::string > PathFollower::addSteps( const path_msgs::FollowPath& a_msg, Sides a_start, double a_startHeading )
 {
     if( !std::isfinite( a_msg.speed_cm_s() ) || a_msg.speed_cm_s() <= 0 )
     {
@@ -240,6 +308,7 @@ std::optional< std::string > PathFollower::addSteps( const path_msgs::FollowPath
     // All segments are checked before any is added, so a bad path does not run halfway.
     std::vector< Step > steps;
     Sides position = a_start;
+    double heading = a_startHeading;
     const auto count = static_cast< uint32_t >( a_msg.segments_size() );
     for( uint32_t i = 0; i < count; i++ )
     {
@@ -247,6 +316,7 @@ std::optional< std::string > PathFollower::addSteps( const path_msgs::FollowPath
         const std::string name = "segment " + std::to_string( i );
         // The belts move the same distance plus or minus the turn, the left belt is on the inside of a left turn.
         Sides distance{};
+        double angle = 0;
         switch( segment.segment_case() )
         {
             case path_msgs::PathSegment::kLine:
@@ -258,7 +328,8 @@ std::optional< std::string > PathFollower::addSteps( const path_msgs::FollowPath
                 {
                     return name + ": turns need path_follower.track_width_cm in sepia.yaml";
                 }
-                const double turn = toRadians( segment.turn().angle_deg() ) * m_trackWidth / 2;
+                angle = toRadians( segment.turn().angle_deg() );
+                const double turn = angle * m_trackWidth / 2;
                 distance = { .left = -turn, .right = turn };
                 break;
             }
@@ -272,7 +343,7 @@ std::optional< std::string > PathFollower::addSteps( const path_msgs::FollowPath
                 {
                     return name + ": radius_cm must not be negative";
                 }
-                const double angle = toRadians( segment.arc().angle_deg() );
+                angle = toRadians( segment.arc().angle_deg() );
                 const double along = segment.arc().radius_cm() * std::abs( angle ) * ( segment.arc().backward() ? -1 : 1 );
                 const double turn = angle * m_trackWidth / 2;
                 distance = { .left = along - turn, .right = along + turn };
@@ -291,6 +362,7 @@ std::optional< std::string > PathFollower::addSteps( const path_msgs::FollowPath
         {
             continue;
         }
+        heading += angle;
         // The shorter belt gets a slower profile with the same shape, so both finish together.
         const double speed = segment.speed_cm_s() > 0 ? segment.speed_cm_s() : a_msg.speed_cm_s();
         const Sides share{ .left = std::abs( distance.left ) / longest, .right = std::abs( distance.right ) / longest };
@@ -302,7 +374,12 @@ std::optional< std::string > PathFollower::addSteps( const path_msgs::FollowPath
                            .start = position,
                            .target = target,
                            .speed = { .left = speed * share.left, .right = speed * share.right },
-                           .acceleration = { .left = a_msg.acceleration_cm_s2() * share.left, .right = a_msg.acceleration_cm_s2() * share.right } } );
+                           .acceleration = { .left = a_msg.acceleration_cm_s2() * share.left, .right = a_msg.acceleration_cm_s2() * share.right },
+                           .heading = heading,
+                           .turn = angle,
+                           .checkHeading = !segment.has_line(),
+                           .isTurn = segment.has_turn(),
+                           .plannedTarget = target } );
         position = target;
     }
 
@@ -321,25 +398,139 @@ void PathFollower::sendSteps()
 {
     while( m_sent < m_steps.size() && m_sent < queuedSteps )
     {
-        const Step& step = m_steps[ m_sent ];
-        roboclaw_msgs::MovePositionCm msg;
-        msg.set_left_speed_cm_s( step.speed.left );
-        msg.set_left_acceleration_cm_s2( step.acceleration.left );
-        msg.set_left_deceleration_cm_s2( step.acceleration.left );
-        msg.set_left_position_cm( step.target.left );
-        msg.set_right_speed_cm_s( step.speed.right );
-        msg.set_right_acceleration_cm_s2( step.acceleration.right );
-        msg.set_right_deceleration_cm_s2( step.acceleration.right );
-        msg.set_right_position_cm( step.target.right );
-        msg.set_clear_buffer( m_clearBuffer );
-        m_clearBuffer = false;
-        sepia::comm2::Dispatcher< roboclaw_msgs::MovePositionCm >::send( &msg );
-
+        // Nothing is queued after a turn or arc whose heading will be checked.
+        if( m_sent > 0 && m_steps[ m_sent - 1 ].checkHeading && checksHeading( Clock::now() ) )
+        {
+            break;
+        }
+        Step& step = m_steps[ m_sent ];
+        sendStep( step );
         if( m_sent == 0 )
         {
+            step.phaseStartHeading = imuHeading();
+            step.phaseTurn = step.turn;
             sendProgress( step, path_msgs::PathProgress::RUNNING );
         }
         m_sent++;
+    }
+}
+
+void PathFollower::sendStep( const Step& a_step )
+{
+    roboclaw_msgs::MovePositionCm msg;
+    msg.set_left_speed_cm_s( a_step.speed.left );
+    msg.set_left_acceleration_cm_s2( a_step.acceleration.left );
+    msg.set_left_deceleration_cm_s2( a_step.acceleration.left );
+    msg.set_left_position_cm( a_step.target.left );
+    msg.set_right_speed_cm_s( a_step.speed.right );
+    msg.set_right_acceleration_cm_s2( a_step.acceleration.right );
+    msg.set_right_deceleration_cm_s2( a_step.acceleration.right );
+    msg.set_right_position_cm( a_step.target.right );
+    msg.set_clear_buffer( m_clearBuffer );
+    m_clearBuffer = false;
+    sepia::comm2::Dispatcher< roboclaw_msgs::MovePositionCm >::send( &msg );
+}
+
+bool PathFollower::checksHeading( Clock::time_point a_now ) const
+{
+    return m_useImu && m_imuStart && m_trackWidth > 0 && a_now - m_imuTime < imuTimeout;
+}
+
+double PathFollower::imuHeading() const
+{
+    return m_imuStart ? m_imuHeading - *m_imuStart : 0;
+}
+
+bool PathFollower::settle( Step& a_step, Clock::time_point a_now )
+{
+    // Waiting for the IMU is not a stall.
+    m_lastMoved = a_now;
+    // Calm counts from when the belts stopped, the robot can still rock on them after that.
+    const bool calm = m_imuCalmSince && a_now - std::max( *m_imuCalmSince, a_step.settleStart ) >= calmTime;
+    if( !calm && a_now - a_step.settleStart < settleTimeout )
+    {
+        return false;
+    }
+
+    const double heading = imuHeading();
+    const double error = a_step.heading - heading;
+    const std::string name = "Path " + std::to_string( a_step.pathId ) + " segment " + std::to_string( a_step.segment );
+    // How much of the turn the belts gave, so a correction allows for the same slip.
+    const double turned = heading - a_step.phaseStartHeading;
+    if( std::abs( a_step.phaseTurn ) >= minimumMeasuredTurn && std::abs( turned ) >= minimumMeasuredTurn )
+    {
+        a_step.turnRatio = std::clamp( turned / a_step.phaseTurn, minimumTurnRatio, maximumTurnRatio );
+        if( a_step.isTurn && a_step.corrections == 0 )
+        {
+            std::cout << name << ": turn of " << toDegrees( a_step.phaseTurn ) << " degrees turned " << toDegrees( turned ) << ", a track width of "
+                      << m_trackWidth * a_step.phaseTurn / turned << " cm would have turned it exactly." << std::endl;
+        }
+    }
+
+    if( std::abs( error ) <= m_headingTolerance )
+    {
+        std::cout << name << ": heading off by " << toDegrees( error ) << " degrees after " << a_step.corrections << " corrections." << std::endl;
+        return true;
+    }
+    if( a_step.corrections >= m_maxCorrections )
+    {
+        std::cout << name << ": heading still off by " << toDegrees( error ) << " degrees after " << a_step.corrections << " corrections, continuing."
+                  << std::endl;
+        return true;
+    }
+
+    // Turns on the spot from the target, so the belt positions stay planned instead of following where they stopped.
+    const double turn = error / a_step.turnRatio;
+    const double belt = turn * m_trackWidth / 2;
+    const double speed = std::max( a_step.speed.left, a_step.speed.right );
+    const double acceleration = std::max( a_step.acceleration.left, a_step.acceleration.right );
+    a_step.start = a_step.target;
+    a_step.target = { .left = a_step.target.left - belt, .right = a_step.target.right + belt };
+    a_step.speed = { .left = speed, .right = speed };
+    a_step.acceleration = { .left = acceleration, .right = acceleration };
+    a_step.phaseStartHeading = heading;
+    a_step.phaseTurn = turn;
+    a_step.corrections++;
+    a_step.phase = Phase::Driving;
+    // Accelerating and braking take as long as the whole move when it is too short to reach the speed.
+    const double distance = std::abs( belt );
+    const double seconds = distance < speed * speed / acceleration ? 2 * std::sqrt( distance / acceleration ) : distance / speed + speed / acceleration;
+    const auto half = std::chrono::duration_cast< Clock::duration >( std::chrono::duration< double >( seconds / 2 ) );
+    a_step.notBefore = a_now + std::max( half, std::chrono::duration_cast< Clock::duration >( correctionStart ) );
+    std::cout << name << ": heading off by " << toDegrees( error ) << " degrees, correcting by " << toDegrees( turn ) << std::endl;
+    sendStep( a_step );
+    return false;
+}
+
+void PathFollower::finishStep( Clock::time_point a_now )
+{
+    const Step step = m_steps.front();
+    if( step.lastOfPath )
+    {
+        sendProgress( step, path_msgs::PathProgress::DONE );
+    }
+    m_steps.pop_front();
+    m_sent = m_sent > 0 ? m_sent - 1 : 0;
+    m_lastMoved = a_now;
+
+    // Corrections moved the belts, so the steps that are not sent yet start from where the corrections ended.
+    if( step.corrections > 0 )
+    {
+        const Sides shift{ .left = step.target.left - step.plannedTarget.left, .right = step.target.right - step.plannedTarget.right };
+        for( size_t i = m_sent; i < m_steps.size(); i++ )
+        {
+            for( Sides* sides : { &m_steps[ i ].start, &m_steps[ i ].target, &m_steps[ i ].plannedTarget } )
+            {
+                sides->left += shift.left;
+                sides->right += shift.right;
+            }
+        }
+    }
+    if( !m_steps.empty() && m_sent > 0 )
+    {
+        m_steps.front().phaseStartHeading = imuHeading();
+        m_steps.front().phaseTurn = m_steps.front().turn;
+        sendProgress( m_steps.front(), path_msgs::PathProgress::RUNNING );
     }
 }
 
@@ -348,9 +539,10 @@ void PathFollower::updatePose( const Sides& a_position )
     const double left = a_position.left - m_posePosition.left;
     const double right = a_position.right - m_posePosition.right;
     m_posePosition = a_position;
-    // Without the track width only the distance is known.
+    // The IMU sees the turns the belts slip on. Without it, or without the track width, the belts give the turn.
     const double along = ( left + right ) / 2;
-    const double turn = m_trackWidth > 0 ? ( right - left ) / m_trackWidth : 0;
+    const bool imu = m_imuStart && Clock::now() - m_imuTime < imuTimeout;
+    const double turn = imu ? imuHeading() - m_heading : m_trackWidth > 0 ? ( right - left ) / m_trackWidth : 0;
     const double heading = m_heading + turn / 2;
     m_x += along * std::cos( heading );
     m_y += along * std::sin( heading );

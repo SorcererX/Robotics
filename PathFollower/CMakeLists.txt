@@ -7,6 +7,7 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR})
 PROTOBUF_GENERATE_CPP(PROTO_SRCS
                       PROTO_HDRS
                       path_msgs.proto
+                      ../ImuReader/imu_msgs.proto
                       ../MovementControl/roboclaw_msgs.proto)
 
 add_executable( ${PROJECT_NAME} )
