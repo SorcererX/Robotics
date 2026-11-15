@@ -2,6 +2,7 @@
 """Programmatic helper that subscribes to ZeroMQ topics defined in sepia.yaml (or the
 SEPIA_CONFIG override) and decodes protobuf payloads."""
 
+import imu_msgs_pb2 as imu_msgs
 import roboclaw_msgs_pb2 as roboclaw_msgs
 from google.protobuf import text_format
 
@@ -28,6 +29,8 @@ class MovementControlHandler( MessageHandler ):
             roboclaw_msgs.SetEncodersCm: self.on_one_line,
             roboclaw_msgs.RequestStatus: self.on_request_status,
             roboclaw_msgs.MoveStatus: self.on_move_status,
+            imu_msgs.ImuData: self.on_one_line,
+            imu_msgs.ResetHeading: self.on_one_line,
         }
         self.register_subscriptions()
 

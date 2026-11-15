@@ -1,0 +1,64 @@
+diff --git a/api/core.c b/api/core.c
+index 207014c..2f9a663 100644
+--- a/api/core.c
++++ b/api/core.c
+@@ -55,7 +55,13 @@ int tssReadCommand(struct TSS_Com_Class *com, const struct TSS_Command *command,
+ 
+ int tssReadCommandV(struct TSS_Com_Class *com, const struct TSS_Command *command, va_list args)
+ {
+-    return tssReadCommandVp(com, command, &args);
++    //A va_list parameter may be an array that decayed to a pointer, so its address is not a va_list*.
++    va_list copy;
++    int result;
++    va_copy(copy, args);
++    result = tssReadCommandVp(com, command, &copy);
++    va_end(copy);
++    return result;
+ }
+ 
+ int tssReadCommandVp(struct TSS_Com_Class *com, const struct TSS_Command *command, va_list *args)
+@@ -420,13 +426,17 @@ int tssGetSettingsRead(struct TSS_Com_Class *com, uint16_t *num_read, ...)
+ int tssGetSettingsReadV(struct TSS_Com_Class *com, uint16_t *num_read, va_list args)
+ {
+     int result;
++    //A va_list parameter may be an array that decayed to a pointer, so its address is not a va_list*.
++    va_list copy;
++    va_copy(copy, args);
+     struct GetSettingUserData user_data = {
+-        .args.va = &args,
++        .args.va = &copy,
+         .num_read = 0,
+         .result = TSS_SUCCESS
+     };
+ 
+     result = tssGetSettingsReadCb(com, getSettingsCallback, &user_data);
++    va_end(copy);
+     if(num_read != NULL) {
+         *num_read = user_data.num_read;
+     }
+diff --git a/api/sensor/base.c b/api/sensor/base.c
+index 8f30afd..32113f4 100644
+--- a/api/sensor/base.c
++++ b/api/sensor/base.c
+@@ -359,14 +359,20 @@ int sensorInternalReadStreamingBatch(TSS_Sensor *sensor, const struct TSS_Comman
+     
+     uint8_t checksum = 0;
+     const struct TSS_Command **cur_slot = sensor->streaming.data.commands;
++    //A va_list parameter may be an array that decayed to a pointer, so its address is not a va_list*.
++    //The copy is shared by all slots, so each slot continues with the next output.
++    va_list copy;
++    va_copy(copy, outputs);
+     while(*cur_slot != NULL) {
+-        int err_or_checksum = tssReadCommandVp(sensor->com, *cur_slot, &outputs);
++        int err_or_checksum = tssReadCommandVp(sensor->com, *cur_slot, &copy);
+         if(err_or_checksum < 0) {
++            va_end(copy);
+             return err_or_checksum;
+         }
+         checksum += (uint8_t)err_or_checksum;
+         cur_slot++;
+     }
++    va_end(copy);
+ 
+     return checksum;
+ }

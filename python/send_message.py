@@ -2,6 +2,7 @@
 """Programmatic helper that publishes protobuf messages over ZeroMQ endpoints defined
 in sepia.yaml (or the SEPIA_CONFIG override)."""
 
+import imu_msgs_pb2 as imu_msgs
 import roboclaw_msgs_pb2 as roboclaw_msgs
 
 from message_sender import send_protobuf_message
@@ -52,6 +53,11 @@ def send_move_distance_cm( left_cm: float, right_cm: float, speed_cm_s: float, a
 def send_set_encoders_cm( left_cm: float, right_cm: float ) -> bool:
     """Set both encoders to a position in cm."""
     return send_protobuf_message( roboclaw_msgs.SetEncodersCm( left_position_cm=left_cm, right_position_cm=right_cm ) )
+
+
+def send_reset_heading( heading_deg: float = 0 ) -> bool:
+    """Set the heading ImuReader reports."""
+    return send_protobuf_message( imu_msgs.ResetHeading( heading_deg=heading_deg ) )
 
 
 if __name__ == "__main__":

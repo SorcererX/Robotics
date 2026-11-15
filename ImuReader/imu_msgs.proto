@@ -1,0 +1,43 @@
+syntax = "proto3";
+package imu_msgs;
+
+// Sent by ImuReader at imu_reader.publish_hz.
+message ImuData
+{
+    // Rotation around the vertical, counter-clockwise seen from above is positive. It keeps counting past
+    // 360 so whole turns can be measured, and is 0 when ImuReader connects to the sensor or as set by
+    // ResetHeading.
+    double heading_deg = 1;
+    double yaw_rate_deg_s = 2;
+    // In the sensor's own axes.
+    double gyro_x_deg_s = 3;
+    double gyro_y_deg_s = 4;
+    double gyro_z_deg_s = 5;
+    double accel_x_g = 6;
+    double accel_y_g = 7;
+    double accel_z_g = 8;
+    // The sensor is not moving. The heading does not change then, and the gyro offset is measured.
+    bool still = 9;
+    // The measured gyro offset around the vertical, which is subtracted from the yaw rate.
+    double yaw_offset_deg_s = 10;
+    // Microseconds from the sensor's clock, wraps after about 71 minutes.
+    uint32 timestamp_us = 11;
+    // The heading from the magnetometer, for comparing with heading_deg. It is disturbed by the motors, their
+    // cables and the building. Like heading_deg it keeps counting past 360, and it starts at heading_deg when
+    // ImuReader connects and at ResetHeading. Unchanged while the field is too weak to measure.
+    double compass_heading_deg = 12;
+    // In the sensor's own axes.
+    double mag_x_gauss = 13;
+    double mag_y_gauss = 14;
+    double mag_z_gauss = 15;
+    // The Earth's field is about 0.5 gauss. A strength or dip that changes while driving shows a disturbance.
+    double mag_strength_gauss = 16;
+    // Angle of the field below the horizontal.
+    double mag_dip_deg = 17;
+}
+
+// Sets the heading and the compass heading, for example to 0 at the start of a path.
+message ResetHeading
+{
+    double heading_deg = 1;
+}
