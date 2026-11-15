@@ -1,4 +1,5 @@
 #include <QApplication>
+#include "followersettingswidget.h"
 #include "pathwindow.h"
 #include <sepia/comm2/qtmessagereceiver.h>
 #include <sepia/comm2/scopedmessagesender.h>
@@ -15,6 +16,7 @@ int main( int argc, char** argv )
     window.show();
 
     sepia::comm2::QtMessageReceiver receiver( &window, &window );
+    sepia::comm2::QtMessageReceiver settingsReceiver( window.followerSettings(), window.followerSettings() );
 
     return app.exec();
 }

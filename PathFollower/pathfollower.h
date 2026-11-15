@@ -16,7 +16,9 @@ class PathFollower : public sepia::util::ThreadObject,
                      public sepia::comm2::Observer< path_msgs::FollowPath >,
                      public sepia::comm2::Observer< path_msgs::StopPath >,
                      public sepia::comm2::Observer< roboclaw_msgs::MoveStatus >,
-                     public sepia::comm2::Observer< imu_msgs::ImuData >
+                     public sepia::comm2::Observer< imu_msgs::ImuData >,
+                     public sepia::comm2::Observer< path_msgs::RequestFollowerSettings >,
+                     public sepia::comm2::Observer< path_msgs::WriteFollowerSettings >
 {
 public:
     PathFollower();
@@ -27,6 +29,8 @@ protected:
     void receive( const path_msgs::StopPath& a_msg ) override;
     void receive( const roboclaw_msgs::MoveStatus& a_msg ) override;
     void receive( const imu_msgs::ImuData& a_msg ) override;
+    void receive( const path_msgs::RequestFollowerSettings& a_msg ) override;
+    void receive( const path_msgs::WriteFollowerSettings& a_msg ) override;
     void own_thread() override;
 
 private:
@@ -76,6 +80,9 @@ private:
         int corrections{ 0 };
     };
 
+    void apply( const path_msgs::FollowerSettings& a_settings );
+    path_msgs::FollowerSettings settings() const;
+    void sendSettings( const std::string& a_result );
     bool active() const;
     std::optional< std::string > addSteps( const path_msgs::FollowPath& a_msg, Sides a_start, double a_startHeading );
     void sendSteps();
@@ -91,13 +98,17 @@ private:
     void sendProgress( const Step& a_step, path_msgs::PathProgress::State a_state, const std::string& a_message = {} );
     void sendProgress( const path_msgs::FollowPath& a_path, path_msgs::PathProgress::State a_state, const std::string& a_message );
 
-    // From sepia.yaml.
+    // From sepia.yaml or WriteFollowerSettings.
     double m_trackWidth{ 0 };
     double m_tolerance{ 1 };
     bool m_useImu{ true };
     // In radians.
     double m_headingTolerance{ 0 };
     int m_maxCorrections{ 3 };
+    // In degrees per second.
+    double m_calmRate{ 1 };
+    Clock::duration m_calmTime{};
+    Clock::duration m_settleTimeout{};
 
     // The latest ImuData, the heading in radians.
     double m_imuHeading{ 0 };
@@ -124,6 +135,10 @@ private:
     double m_x{ 0 };
     double m_y{ 0 };
     double m_heading{ 0 };
+    // The same from the belts alone.
+    double m_encoderX{ 0 };
+    double m_encoderY{ 0 };
+    double m_encoderHeading{ 0 };
     Sides m_posePosition{};
     // For noticing a robot that has stopped short of the target.
     Sides m_lastPosition{};

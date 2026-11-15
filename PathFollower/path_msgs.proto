@@ -65,10 +65,17 @@ message StopPath
 message PathPose
 {
     uint32 id = 1;
+    // With the heading from the IMU when imu_heading is set, otherwise the same as the encoder pose.
     double x_cm = 2;
     double y_cm = 3;
     // Counter-clockwise from x.
     double heading_deg = 4;
+    // From the belts alone, the heading from the difference between them. Turns the belts slip on are counted in
+    // full, so comparing it with the pose above shows the slip.
+    double encoder_x_cm = 5;
+    double encoder_y_cm = 6;
+    double encoder_heading_deg = 7;
+    bool imu_heading = 8;
 }
 
 // Sent when a segment starts and when a path ends.
@@ -89,4 +96,42 @@ message PathProgress
     uint32 segment_count = 4;
     // Why the path stopped or failed.
     string message = 5;
+}
+
+// How PathFollower drives. It starts with the values in sepia.yaml, changes are kept until it restarts.
+message FollowerSettings
+{
+    // Middle to middle of the belts. Turns and arcs need it, 0 allows only lines. A path that is running keeps
+    // the belt targets it was planned with, its heading corrections and pose use a changed value at once.
+    double track_width_cm = 1;
+    // How close the belts must get to a segment's end before the next one counts as started.
+    double tolerance_cm = 2;
+    // Check the heading after turns and arcs with ImuData, and correct it by turning on the spot.
+    bool use_imu = 3;
+    double heading_tolerance_deg = 4;
+    uint32 max_heading_corrections = 5;
+    // After a turn or arc, the heading is checked when the turn rate has stayed below calm_rate_deg_s for
+    // calm_time_s, or after settle_timeout_s.
+    double calm_rate_deg_s = 6;
+    double calm_time_s = 7;
+    double settle_timeout_s = 8;
+}
+
+message RequestFollowerSettings
+{
+    int32 time = 1;
+}
+
+// All values are checked before any is used, so a bad value changes nothing.
+message WriteFollowerSettings
+{
+    FollowerSettings settings = 1;
+}
+
+// Sent when PathFollower starts and after each request or write.
+message FollowerSettingsReport
+{
+    FollowerSettings settings = 1;
+    // What was done, or why the write was refused.
+    string result = 2;
 }

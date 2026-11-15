@@ -1,5 +1,7 @@
 #include "pathwindow.h"
+#include "followersettingswidget.h"
 #include "pathcanvas.h"
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDateTime>
 #include <QDoubleSpinBox>
@@ -13,6 +15,7 @@
 #include <QRadioButton>
 #include <QShortcut>
 #include <QSignalBlocker>
+#include <QTabWidget>
 #include <QTableWidget>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -62,6 +65,7 @@ namespace
 PathWindow::PathWindow( QWidget* a_parent )
     : QWidget( a_parent )
     , m_canvas( new PathCanvas( this ) )
+    , m_followerSettings( new FollowerSettingsWidget )
     , m_straight( new QRadioButton( "Straight (turn, then line)" ) )
     , m_table( new QTableWidget( 0, Columns ) )
     , m_speed( spinBox( 0.1, 200, 10, " cm/s" ) )
@@ -136,12 +140,51 @@ PathWindow::PathWindow( QWidget* a_parent )
     driveLayout->addWidget( m_status, 4, 0, 1, 2 );
     panel->addWidget( drive );
 
+    // Each way of placing the robot can be hidden, with where it puts the robot: the planned end, and where the
+    // encoders alone and the encoders with the IMU heading say the robot is.
+    auto* position = new QGroupBox( "Position" );
+    auto* positionLayout = new QGridLayout( position );
+    const std::pair< PathCanvas::Layer, QString > layers[] = {
+        { PathCanvas::Layer::Planned, "Planned" },
+        { PathCanvas::Layer::Encoders, "Encoders" },
+        { PathCanvas::Layer::Imu, "IMU" },
+    };
+    for( int column = 1; const char* unit : { "x cm", "y cm", "°" } )
+    {
+        positionLayout->addWidget( new QLabel( unit ), 0, column++, Qt::AlignRight );
+    }
+    for( int row = 1; const auto& [ layer, name ] : layers )
+    {
+        QPixmap swatch( 12, 12 );
+        swatch.fill( PathCanvas::color( layer ) );
+        auto* shown = new QCheckBox( name );
+        shown->setIcon( QIcon( swatch ) );
+        shown->setChecked( true );
+        connect( shown, &QCheckBox::toggled, m_canvas, [ this, layer ]( bool a_shown ) { m_canvas->setShown( layer, a_shown ); } );
+        positionLayout->addWidget( shown, row, 0 );
+        for( int column = 0; column < 3; column++ )
+        {
+            auto* value = new QLabel;
+            value->setAlignment( Qt::AlignRight | Qt::AlignVCenter );
+            m_poses[ layer ][ static_cast< size_t >( column ) ] = value;
+            positionLayout->addWidget( value, row, column + 1 );
+        }
+        showPose( layer, std::nullopt );
+        row++;
+    }
+    positionLayout->setColumnStretch( 0, 1 );
+    panel->addWidget( position );
+
+    // The path and the follower's settings are on separate tabs, so the window does not get taller.
     auto* panelWidget = new QWidget;
     panelWidget->setLayout( panel );
-    panelWidget->setFixedWidth( 300 );
+    auto* tabs = new QTabWidget;
+    tabs->addTab( panelWidget, "Path" );
+    tabs->addTab( m_followerSettings, "Follower" );
+    tabs->setFixedWidth( 320 );
     auto* layout = new QHBoxLayout( this );
     layout->addWidget( m_canvas, 1 );
-    layout->addWidget( panelWidget );
+    layout->addWidget( tabs );
 
     connect( snap, qOverload< int >( &QComboBox::currentIndexChanged ), this, [ this, snap ]() { m_canvas->setSnap( snap->currentData().toDouble() ); } );
     connect( m_canvas, &PathCanvas::pointHovered, this, [ this ]( double a_x, double a_y ) { m_canvas->setPreview( segmentsTo( a_x, a_y ) ); } );
@@ -272,6 +315,7 @@ void PathWindow::changed()
 {
     m_canvas->setSegments( m_segments );
     fillTable();
+    showPose( PathCanvas::Layer::Planned, m_segments.empty() ? std::nullopt : std::optional( endPose() ) );
 }
 
 void PathWindow::fillTable()
@@ -383,6 +427,8 @@ void PathWindow::run()
     sepia::comm2::Dispatcher< path_msgs::FollowPath >::send( &msg );
 
     m_canvas->clearTrace();
+    showPose( PathCanvas::Layer::Encoders, std::nullopt );
+    showPose( PathCanvas::Layer::Imu, std::nullopt );
     showRunning( std::nullopt );
     m_answered = false;
     m_answerTimer->start();
@@ -420,8 +466,34 @@ void PathWindow::receive( const path_msgs::PathProgress& a_msg )
 
 void PathWindow::receive( const path_msgs::PathPose& a_msg )
 {
-    if( a_msg.id() == m_pathId )
+    if( a_msg.id() != m_pathId )
     {
-        m_canvas->addTrace( { .x = a_msg.x_cm(), .y = a_msg.y_cm(), .heading = a_msg.heading_deg() * std::numbers::pi / 180 } );
+        return;
     }
+    const Pose encoders{ .x = a_msg.encoder_x_cm(), .y = a_msg.encoder_y_cm(), .heading = a_msg.encoder_heading_deg() * std::numbers::pi / 180 };
+    // Without the IMU the other pose is the same as the encoder one, so it is not drawn.
+    std::optional< Pose > imu;
+    if( a_msg.imu_heading() )
+    {
+        imu = Pose{ .x = a_msg.x_cm(), .y = a_msg.y_cm(), .heading = a_msg.heading_deg() * std::numbers::pi / 180 };
+    }
+    m_canvas->addTrace( encoders, imu );
+    showPose( PathCanvas::Layer::Encoders, encoders );
+    showPose( PathCanvas::Layer::Imu, imu );
+}
+
+void PathWindow::showPose( PathCanvas::Layer a_layer, const std::optional< Pose >& a_pose )
+{
+    auto& labels = m_poses[ a_layer ];
+    if( !a_pose )
+    {
+        for( QLabel* label : labels )
+        {
+            label->setText( "–" );
+        }
+        return;
+    }
+    labels[ 0 ]->setText( number( a_pose->x ) );
+    labels[ 1 ]->setText( number( a_pose->y ) );
+    labels[ 2 ]->setText( number( a_pose->heading * 180 / std::numbers::pi ) );
 }

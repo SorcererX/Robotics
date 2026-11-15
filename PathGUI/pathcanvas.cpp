@@ -13,10 +13,21 @@ namespace
     // A press that moves less than this is a click.
     constexpr double clickDistance = 4;
 
-    const QColor pathColor( 40, 110, 200 );
     const QColor runningColor( 230, 120, 20 );
     const QColor previewColor( 120, 120, 120 );
-    const QColor traceColor( 30, 160, 70 );
+}
+
+QColor PathCanvas::color( Layer a_layer )
+{
+    switch( a_layer )
+    {
+        case Layer::Planned:
+            return { 40, 110, 200 };
+        case Layer::Encoders:
+            return { 160, 70, 190 };
+        default:
+            return { 30, 160, 70 };
+    }
 }
 
 PathCanvas::PathCanvas( QWidget* a_parent )
@@ -47,14 +58,37 @@ void PathCanvas::setRunning( std::optional< int > a_segment )
 
 void PathCanvas::clearTrace()
 {
-    m_trace.clear();
+    m_encoderTrace.clear();
+    m_imuTrace.clear();
     update();
 }
 
-void PathCanvas::addTrace( const Pose& a_pose )
+void PathCanvas::addTrace( const Pose& a_encoders, const std::optional< Pose >& a_imu )
 {
-    m_trace.push_back( a_pose );
+    m_encoderTrace.push_back( a_encoders );
+    if( a_imu )
+    {
+        m_imuTrace.push_back( *a_imu );
+    }
     update();
+}
+
+void PathCanvas::setShown( Layer a_layer, bool a_shown )
+{
+    if( a_shown )
+    {
+        m_hidden.erase( a_layer );
+    }
+    else
+    {
+        m_hidden.insert( a_layer );
+    }
+    update();
+}
+
+bool PathCanvas::shown( Layer a_layer ) const
+{
+    return !m_hidden.contains( a_layer );
 }
 
 void PathCanvas::setSnap( double a_snap )
@@ -82,9 +116,12 @@ void PathCanvas::fit()
         }
         pose = poseAlong( pose, segment, 1 );
     }
-    for( const Pose& point : m_trace )
+    for( const auto* trace : { &m_encoderTrace, &m_imuTrace } )
     {
-        include( point );
+        for( const Pose& point : *trace )
+        {
+            include( point );
+        }
     }
 
     // At least a metre is shown, with a margin around the path.
@@ -145,28 +182,26 @@ void PathCanvas::paintEvent( QPaintEvent* )
     drawGrid( painter );
 
     drawRobot( painter, { 0, 0, 0 }, palette().text().color(), false );
-    drawSegments( painter, { 0, 0, 0 }, m_segments, pathColor, Qt::SolidLine, m_running );
     const Pose end = endPose();
-    if( !m_segments.empty() )
+    if( shown( Layer::Planned ) )
     {
-        drawRobot( painter, end, pathColor, false );
+        drawSegments( painter, { 0, 0, 0 }, m_segments, color( Layer::Planned ), Qt::SolidLine, m_running );
+        if( !m_segments.empty() )
+        {
+            drawRobot( painter, end, color( Layer::Planned ), false );
+        }
     }
+    // The preview is always shown, it is what a click adds.
     drawSegments( painter, end, m_preview, previewColor, Qt::DashLine, std::nullopt );
 
-    if( m_trace.size() > 1 )
+    // The IMU is drawn last, it is the best guess of where the robot is.
+    if( shown( Layer::Encoders ) )
     {
-        QPainterPath trace( toScreen( m_trace.front() ) );
-        for( const Pose& pose : m_trace )
-        {
-            trace.lineTo( toScreen( pose ) );
-        }
-        painter.setPen( QPen( traceColor, 2 ) );
-        painter.setBrush( Qt::NoBrush );
-        painter.drawPath( trace );
+        drawTrace( painter, m_encoderTrace, color( Layer::Encoders ) );
     }
-    if( !m_trace.empty() )
+    if( shown( Layer::Imu ) )
     {
-        drawRobot( painter, m_trace.back(), traceColor, true );
+        drawTrace( painter, m_imuTrace, color( Layer::Imu ) );
     }
 
     // The point a click adds, and where it is.
@@ -180,6 +215,23 @@ void PathCanvas::paintEvent( QPaintEvent* )
         text += QString( "   x %1 cm  y %2 cm" ).arg( QLocale().toString( m_hover->first, 'f', 1 ), QLocale().toString( m_hover->second, 'f', 1 ) );
     }
     painter.drawText( rect().adjusted( 8, 4, -8, -4 ), Qt::AlignLeft | Qt::AlignBottom, text );
+}
+
+void PathCanvas::drawTrace( QPainter& a_painter, const std::vector< Pose >& a_trace, const QColor& a_color ) const
+{
+    if( a_trace.empty() )
+    {
+        return;
+    }
+    QPainterPath trace( toScreen( a_trace.front() ) );
+    for( const Pose& pose : a_trace )
+    {
+        trace.lineTo( toScreen( pose ) );
+    }
+    a_painter.setPen( QPen( a_color, 2 ) );
+    a_painter.setBrush( Qt::NoBrush );
+    a_painter.drawPath( trace );
+    drawRobot( a_painter, a_trace.back(), a_color, true );
 }
 
 void PathCanvas::drawGrid( QPainter& a_painter ) const

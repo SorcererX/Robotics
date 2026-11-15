@@ -31,11 +31,6 @@ namespace
     constexpr size_t queuedSteps = 2;
     // ImuData older than this is not used.
     constexpr auto imuTimeout = 500ms;
-    // After a turn or arc has stopped, the heading is checked when the turn rate has stayed below calmRate, in
-    // degrees per second, for calmTime, or after settleTimeout.
-    constexpr double calmRate = 1;
-    constexpr auto calmTime = 200ms;
-    constexpr auto settleTimeout = 1500ms;
     // A correction cannot count as done before it has started, which is certain after half its expected time, or
     // after this long for a short one since the message takes time to reach the controller.
     constexpr auto correctionStart = 150ms;
@@ -45,21 +40,61 @@ namespace
     // Turns smaller than this in radians are too small to measure the slip on.
     constexpr double minimumMeasuredTurn = 2 * std::numbers::pi / 180;
 
-    struct Config
+    path_msgs::FollowerSettings defaultSettings()
     {
-        double trackWidth = 0;
-        double tolerance = 1;
-        bool useImu = true;
-        double headingTolerance = 1;
-        int maxCorrections = 3;
-    };
+        path_msgs::FollowerSettings settings;
+        settings.set_track_width_cm( 0 );
+        settings.set_tolerance_cm( 1 );
+        settings.set_use_imu( true );
+        settings.set_heading_tolerance_deg( 1 );
+        settings.set_max_heading_corrections( 3 );
+        settings.set_calm_rate_deg_s( 1 );
+        settings.set_calm_time_s( 0.2 );
+        settings.set_settle_timeout_s( 1.5 );
+        return settings;
+    }
 
-    // Reads path_follower from the same file SepiaComm uses.
-    Config loadConfig()
+    // Why the settings cannot be used, or nothing when they can.
+    std::optional< std::string > validate( const path_msgs::FollowerSettings& a_settings )
+    {
+        const auto finite = [ & ]( double a_value ) { return std::isfinite( a_value ); };
+        if( !finite( a_settings.track_width_cm() ) || a_settings.track_width_cm() < 0 )
+        {
+            return "track_width_cm must be 0 or more";
+        }
+        if( !finite( a_settings.tolerance_cm() ) || a_settings.tolerance_cm() <= 0 )
+        {
+            return "tolerance_cm must be above 0";
+        }
+        if( !finite( a_settings.heading_tolerance_deg() ) || a_settings.heading_tolerance_deg() <= 0 )
+        {
+            return "heading_tolerance_deg must be above 0";
+        }
+        if( a_settings.max_heading_corrections() > 10 )
+        {
+            return "max_heading_corrections must be 10 or less";
+        }
+        if( !finite( a_settings.calm_rate_deg_s() ) || a_settings.calm_rate_deg_s() <= 0 )
+        {
+            return "calm_rate_deg_s must be above 0";
+        }
+        if( !finite( a_settings.calm_time_s() ) || a_settings.calm_time_s() < 0 )
+        {
+            return "calm_time_s must be 0 or more";
+        }
+        if( !finite( a_settings.settle_timeout_s() ) || a_settings.settle_timeout_s() < a_settings.calm_time_s() || a_settings.settle_timeout_s() > 10 )
+        {
+            return "settle_timeout_s must be at least calm_time_s and at most 10";
+        }
+        return std::nullopt;
+    }
+
+    // Reads path_follower from the same file SepiaComm uses. Settings that are not in it keep their defaults.
+    path_msgs::FollowerSettings loadSettings()
     {
         const char* configured = std::getenv( "SEPIA_CONFIG" );
         const std::string path = configured != nullptr && *configured != '\0' ? configured : "sepia.yaml";
-        Config config;
+        path_msgs::FollowerSettings settings = defaultSettings();
         std::error_code ec;
         if( std::filesystem::exists( path, ec ) )
         {
@@ -67,11 +102,14 @@ namespace
             {
                 if( const YAML::Node node = YAML::LoadFile( path )[ "path_follower" ] )
                 {
-                    config.trackWidth = node[ "track_width_cm" ].as< double >( config.trackWidth );
-                    config.tolerance = node[ "tolerance_cm" ].as< double >( config.tolerance );
-                    config.useImu = node[ "use_imu" ].as< bool >( config.useImu );
-                    config.headingTolerance = node[ "heading_tolerance_deg" ].as< double >( config.headingTolerance );
-                    config.maxCorrections = node[ "max_heading_corrections" ].as< int >( config.maxCorrections );
+                    settings.set_track_width_cm( node[ "track_width_cm" ].as< double >( settings.track_width_cm() ) );
+                    settings.set_tolerance_cm( node[ "tolerance_cm" ].as< double >( settings.tolerance_cm() ) );
+                    settings.set_use_imu( node[ "use_imu" ].as< bool >( settings.use_imu() ) );
+                    settings.set_heading_tolerance_deg( node[ "heading_tolerance_deg" ].as< double >( settings.heading_tolerance_deg() ) );
+                    settings.set_max_heading_corrections( node[ "max_heading_corrections" ].as< uint32_t >( settings.max_heading_corrections() ) );
+                    settings.set_calm_rate_deg_s( node[ "calm_rate_deg_s" ].as< double >( settings.calm_rate_deg_s() ) );
+                    settings.set_calm_time_s( node[ "calm_time_s" ].as< double >( settings.calm_time_s() ) );
+                    settings.set_settle_timeout_s( node[ "settle_timeout_s" ].as< double >( settings.settle_timeout_s() ) );
                 }
             }
             catch( const YAML::Exception& ex )
@@ -79,18 +117,17 @@ namespace
                 std::cerr << "Unable to read path_follower from '" << path << "': " << ex.what() << std::endl;
             }
         }
-        if( !( config.tolerance > 0 ) )
+        if( const auto error = validate( settings ) )
         {
-            std::cerr << "tolerance_cm must be above 0, using 1." << std::endl;
-            config.tolerance = 1;
+            std::cerr << "Using the default settings, " << *error << " in '" << path << "'." << std::endl;
+            settings = defaultSettings();
         }
-        if( !( config.headingTolerance > 0 ) )
-        {
-            std::cerr << "heading_tolerance_deg must be above 0, using 1." << std::endl;
-            config.headingTolerance = 1;
-        }
-        config.maxCorrections = std::max( config.maxCorrections, 0 );
-        return config;
+        return settings;
+    }
+
+    std::chrono::steady_clock::duration toDuration( double a_seconds )
+    {
+        return std::chrono::duration_cast< std::chrono::steady_clock::duration >( std::chrono::duration< double >( a_seconds ) );
     }
 
     double toRadians( double a_degrees )
@@ -106,26 +143,65 @@ namespace
 
 PathFollower::PathFollower()
 {
-    const Config config = loadConfig();
-    m_trackWidth = config.trackWidth;
-    m_tolerance = config.tolerance;
-    m_useImu = config.useImu;
-    m_headingTolerance = toRadians( config.headingTolerance );
-    m_maxCorrections = config.maxCorrections;
-    if( m_trackWidth > 0 )
+    apply( loadSettings() );
+    const path_msgs::FollowerSettings settings = this->settings();
+    std::cout << "Settings: " << settings.ShortDebugString() << std::endl;
+    if( !( m_trackWidth > 0 ) )
     {
-        std::cout << "Track width: " << m_trackWidth << " cm, tolerance: " << m_tolerance << " cm" << std::endl;
+        std::cout << "path_follower.track_width_cm is not set in sepia.yaml, only lines can be driven." << std::endl;
     }
-    else
+}
+
+void PathFollower::apply( const path_msgs::FollowerSettings& a_settings )
+{
+    m_trackWidth = a_settings.track_width_cm();
+    m_tolerance = a_settings.tolerance_cm();
+    m_useImu = a_settings.use_imu();
+    m_headingTolerance = toRadians( a_settings.heading_tolerance_deg() );
+    m_maxCorrections = static_cast< int >( a_settings.max_heading_corrections() );
+    m_calmRate = a_settings.calm_rate_deg_s();
+    m_calmTime = toDuration( a_settings.calm_time_s() );
+    m_settleTimeout = toDuration( a_settings.settle_timeout_s() );
+}
+
+path_msgs::FollowerSettings PathFollower::settings() const
+{
+    path_msgs::FollowerSettings settings;
+    settings.set_track_width_cm( m_trackWidth );
+    settings.set_tolerance_cm( m_tolerance );
+    settings.set_use_imu( m_useImu );
+    settings.set_heading_tolerance_deg( toDegrees( m_headingTolerance ) );
+    settings.set_max_heading_corrections( static_cast< uint32_t >( m_maxCorrections ) );
+    settings.set_calm_rate_deg_s( m_calmRate );
+    settings.set_calm_time_s( std::chrono::duration< double >( m_calmTime ).count() );
+    settings.set_settle_timeout_s( std::chrono::duration< double >( m_settleTimeout ).count() );
+    return settings;
+}
+
+void PathFollower::sendSettings( const std::string& a_result )
+{
+    path_msgs::FollowerSettingsReport msg;
+    *msg.mutable_settings() = settings();
+    msg.set_result( a_result );
+    std::cout << "FollowerSettingsReport " << msg.ShortDebugString() << std::endl;
+    sepia::comm2::Dispatcher< path_msgs::FollowerSettingsReport >::send( &msg );
+}
+
+void PathFollower::receive( const path_msgs::RequestFollowerSettings& )
+{
+    sendSettings( "Read." );
+}
+
+void PathFollower::receive( const path_msgs::WriteFollowerSettings& a_msg )
+{
+    std::cout << "WriteFollowerSettings " << a_msg.ShortDebugString() << std::endl;
+    if( const auto error = validate( a_msg.settings() ) )
     {
-        std::cout << "path_follower.track_width_cm is not set in sepia.yaml, only lines can be driven. Tolerance: " << m_tolerance << " cm"
-                  << std::endl;
+        sendSettings( "Not changed, " + *error + "." );
+        return;
     }
-    if( m_useImu )
-    {
-        std::cout << "Turns and arcs are checked with ImuData, heading tolerance: " << config.headingTolerance << " degrees, at most " << m_maxCorrections
-                  << " corrections" << std::endl;
-    }
+    apply( a_msg.settings() );
+    sendSettings( "Changed, until PathFollower restarts." );
 }
 
 PathFollower::~PathFollower()
@@ -137,6 +213,7 @@ void PathFollower::own_thread()
     sepia::comm2::ScopedMessageSender sender;
     // Returns regularly without messages, so the status can be requested.
     sepia::comm2::Receiver handler( this, 20 );
+    sendSettings( "Started." );
     while( !m_terminate && handler.exec() )
     {
         checkTimeouts();
@@ -196,7 +273,7 @@ void PathFollower::receive( const imu_msgs::ImuData& a_msg )
 {
     const auto now = Clock::now();
     m_imuHeading = toRadians( a_msg.heading_deg() );
-    if( std::abs( a_msg.yaw_rate_deg_s() ) >= calmRate )
+    if( std::abs( a_msg.yaw_rate_deg_s() ) >= m_calmRate )
     {
         m_imuCalmSince.reset();
     }
@@ -219,6 +296,7 @@ void PathFollower::receive( const roboclaw_msgs::MoveStatus& a_msg )
         if( m_steps.empty() )
         {
             m_x = m_y = m_heading = 0;
+            m_encoderX = m_encoderY = m_encoderHeading = 0;
             m_posePosition = position;
             const bool imu = now - m_imuTime < imuTimeout;
             m_imuStart = imu ? std::optional( m_imuHeading ) : std::nullopt;
@@ -446,8 +524,8 @@ bool PathFollower::settle( Step& a_step, Clock::time_point a_now )
     // Waiting for the IMU is not a stall.
     m_lastMoved = a_now;
     // Calm counts from when the belts stopped, the robot can still rock on them after that.
-    const bool calm = m_imuCalmSince && a_now - std::max( *m_imuCalmSince, a_step.settleStart ) >= calmTime;
-    if( !calm && a_now - a_step.settleStart < settleTimeout )
+    const bool calm = m_imuCalmSince && a_now - std::max( *m_imuCalmSince, a_step.settleStart ) >= m_calmTime;
+    if( !calm && a_now - a_step.settleStart < m_settleTimeout )
     {
         return false;
     }
@@ -539,10 +617,17 @@ void PathFollower::updatePose( const Sides& a_position )
     const double left = a_position.left - m_posePosition.left;
     const double right = a_position.right - m_posePosition.right;
     m_posePosition = a_position;
-    // The IMU sees the turns the belts slip on. Without it, or without the track width, the belts give the turn.
+    // Without the track width the belts give no turn.
     const double along = ( left + right ) / 2;
+    const double beltTurn = m_trackWidth > 0 ? ( right - left ) / m_trackWidth : 0;
+    const double encoderHeading = m_encoderHeading + beltTurn / 2;
+    m_encoderX += along * std::cos( encoderHeading );
+    m_encoderY += along * std::sin( encoderHeading );
+    m_encoderHeading += beltTurn;
+
+    // The IMU sees the turns the belts slip on. Without it, the belts give the turn here too.
     const bool imu = m_imuStart && Clock::now() - m_imuTime < imuTimeout;
-    const double turn = imu ? imuHeading() - m_heading : m_trackWidth > 0 ? ( right - left ) / m_trackWidth : 0;
+    const double turn = imu ? imuHeading() - m_heading : beltTurn;
     const double heading = m_heading + turn / 2;
     m_x += along * std::cos( heading );
     m_y += along * std::sin( heading );
@@ -552,7 +637,11 @@ void PathFollower::updatePose( const Sides& a_position )
     msg.set_id( m_steps.front().pathId );
     msg.set_x_cm( m_x );
     msg.set_y_cm( m_y );
-    msg.set_heading_deg( m_heading * 180 / std::numbers::pi );
+    msg.set_heading_deg( toDegrees( m_heading ) );
+    msg.set_encoder_x_cm( m_encoderX );
+    msg.set_encoder_y_cm( m_encoderY );
+    msg.set_encoder_heading_deg( toDegrees( m_encoderHeading ) );
+    msg.set_imu_heading( imu );
     sepia::comm2::Dispatcher< path_msgs::PathPose >::send( &msg );
 }
 

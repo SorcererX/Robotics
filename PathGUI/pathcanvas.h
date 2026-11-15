@@ -4,6 +4,7 @@
 #include <QPointF>
 #include <QWidget>
 #include <optional>
+#include <set>
 #include <vector>
 
 class QPainter;
@@ -14,13 +15,24 @@ class PathCanvas : public QWidget
 {
     Q_OBJECT
 public:
+    // What can be shown or hidden.
+    enum class Layer
+    {
+        Planned,
+        Encoders,
+        Imu
+    };
+    static QColor color( Layer a_layer );
+
     explicit PathCanvas( QWidget* a_parent = nullptr );
     void setSegments( const std::vector< path_msgs::PathSegment >& a_segments );
     // Drawn from the end of the path, for showing what a click would add.
     void setPreview( const std::vector< path_msgs::PathSegment >& a_segments );
     void setRunning( std::optional< int > a_segment );
     void clearTrace();
-    void addTrace( const Pose& a_pose );
+    // Where the robot went by its belts alone, and by the belts with the IMU heading when there is one.
+    void addTrace( const Pose& a_encoders, const std::optional< Pose >& a_imu );
+    void setShown( Layer a_layer, bool a_shown );
     // Grid in cm that clicked points snap to, 0 for none.
     void setSnap( double a_snap );
     // Zooms and moves the view so the path fits.
@@ -49,12 +61,16 @@ private:
     void drawSegments( QPainter& a_painter, const Pose& a_start, const std::vector< path_msgs::PathSegment >& a_segments, const QColor& a_color,
                        Qt::PenStyle a_style, std::optional< int > a_highlight ) const;
     void drawRobot( QPainter& a_painter, const Pose& a_pose, const QColor& a_color, bool a_filled ) const;
+    void drawTrace( QPainter& a_painter, const std::vector< Pose >& a_trace, const QColor& a_color ) const;
+    bool shown( Layer a_layer ) const;
     Pose endPose() const;
 
     std::vector< path_msgs::PathSegment > m_segments;
     std::vector< path_msgs::PathSegment > m_preview;
     std::optional< int > m_running;
-    std::vector< Pose > m_trace;
+    std::vector< Pose > m_encoderTrace;
+    std::vector< Pose > m_imuTrace;
+    std::set< Layer > m_hidden;
     double m_snap{ 5 };
     // Pixels per cm, and where the start is on the screen.
     double m_scale{ 3 };

@@ -1,13 +1,16 @@
 #ifndef PATH_WINDOW_H
 #define PATH_WINDOW_H
 #include "path_msgs.pb.h"
+#include "pathcanvas.h"
 #include "pathgeometry.h"
+#include <array>
+#include <map>
 #include <QWidget>
 #include <sepia/comm2/observer.h>
 #include <optional>
 #include <vector>
 
-class PathCanvas;
+class FollowerSettingsWidget;
 class QDoubleSpinBox;
 class QLabel;
 class QRadioButton;
@@ -22,6 +25,11 @@ class PathWindow : public QWidget,
     Q_OBJECT
 public:
     explicit PathWindow( QWidget* a_parent = nullptr );
+    // Receives its own messages.
+    FollowerSettingsWidget* followerSettings() const
+    {
+        return m_followerSettings;
+    }
 
 protected:
     void receive( const path_msgs::PathProgress& a_msg ) override;
@@ -35,11 +43,15 @@ private:
     void fillTable();
     void cellEdited( int a_row, int a_column );
     void showRunning( std::optional< int > a_segment );
+    void showPose( PathCanvas::Layer a_layer, const std::optional< Pose >& a_pose );
     void run();
     Pose endPose() const;
     std::vector< path_msgs::PathSegment > segmentsTo( double a_x, double a_y ) const;
 
     PathCanvas* m_canvas;
+    FollowerSettingsWidget* m_followerSettings;
+    // Where each way of placing the robot puts it: x, y and heading.
+    std::map< PathCanvas::Layer, std::array< QLabel*, 3 > > m_poses;
     QRadioButton* m_straight;
     QTableWidget* m_table;
     QDoubleSpinBox* m_speed;
