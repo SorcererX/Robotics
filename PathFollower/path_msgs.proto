@@ -1,0 +1,92 @@
+syntax = "proto3";
+package path_msgs;
+
+// Distances are in cm along the middle of the robot, angles are the change of heading in degrees with
+// counter-clockwise (left) as positive. Turns and arcs use path_follower.track_width_cm from sepia.yaml.
+
+// Straight ahead, negative is backward.
+message Line
+{
+    double distance_cm = 1;
+}
+
+// Turns on the spot.
+message Turn
+{
+    double angle_deg = 1;
+}
+
+// Drives along a circle until the heading has changed by angle_deg. The circle is on the left for a positive
+// angle and on the right for a negative one. A radius below half the track width runs the inner belt backward.
+message Arc
+{
+    double radius_cm = 1;
+    double angle_deg = 2;
+    bool backward = 3;
+}
+
+message PathSegment
+{
+    oneof segment
+    {
+        Line line = 1;
+        Turn turn = 2;
+        Arc arc = 3;
+    }
+    // Replaces the speed of the path for this segment when above 0.
+    double speed_cm_s = 4;
+}
+
+// Drives the segments one after the other. The next segment is queued in the motor controller, so it starts
+// as soon as the one before it ends. Each segment starts from the target of the one before it, so errors do
+// not add up.
+message FollowPath
+{
+    // Returned in PathProgress.
+    uint32 id = 1;
+    repeated PathSegment segments = 2;
+    // Of the faster belt, the other belt is slowed down so both finish the segment together.
+    double speed_cm_s = 3;
+    double acceleration_cm_s2 = 4;
+    // Adds the segments after the running path instead of stopping it.
+    bool append = 5;
+}
+
+// Stops the running and waiting paths.
+message StopPath
+{
+    // The acceleration of the running path is used when 0.
+    double deceleration_cm_s2 = 1;
+}
+
+// Where the robot is, worked out from the belt positions. Sent with each MoveStatus while a path runs.
+// Measured from where the robot was when the path started, x forward and y to the left. Appended paths
+// continue from the start of the path they were appended to.
+message PathPose
+{
+    uint32 id = 1;
+    double x_cm = 2;
+    double y_cm = 3;
+    // Counter-clockwise from x.
+    double heading_deg = 4;
+}
+
+// Sent when a segment starts and when a path ends.
+message PathProgress
+{
+    enum State
+    {
+        RUNNING = 0;
+        DONE = 1;
+        // By StopPath, or by a FollowPath that was not appended.
+        STOPPED = 2;
+        FAILED = 3;
+    }
+    uint32 id = 1;
+    State state = 2;
+    // The segment that is running, or the last one when the path has ended.
+    uint32 segment = 3;
+    uint32 segment_count = 4;
+    // Why the path stopped or failed.
+    string message = 5;
+}

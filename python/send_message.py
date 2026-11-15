@@ -3,6 +3,7 @@
 in sepia.yaml (or the SEPIA_CONFIG override)."""
 
 import imu_msgs_pb2 as imu_msgs
+import path_msgs_pb2 as path_msgs
 import roboclaw_msgs_pb2 as roboclaw_msgs
 
 from message_sender import send_protobuf_message
@@ -53,6 +54,35 @@ def send_move_distance_cm( left_cm: float, right_cm: float, speed_cm_s: float, a
 def send_set_encoders_cm( left_cm: float, right_cm: float ) -> bool:
     """Set both encoders to a position in cm."""
     return send_protobuf_message( roboclaw_msgs.SetEncodersCm( left_position_cm=left_cm, right_position_cm=right_cm ) )
+
+
+def line( distance_cm: float, speed_cm_s: float = 0 ) -> path_msgs.PathSegment:
+    """A straight segment, negative is backward. A speed above 0 replaces the speed of the path."""
+    return path_msgs.PathSegment( line=path_msgs.Line( distance_cm=distance_cm ), speed_cm_s=speed_cm_s )
+
+
+def turn( angle_deg: float, speed_cm_s: float = 0 ) -> path_msgs.PathSegment:
+    """A turn on the spot, counter-clockwise (left) is positive."""
+    return path_msgs.PathSegment( turn=path_msgs.Turn( angle_deg=angle_deg ), speed_cm_s=speed_cm_s )
+
+
+def arc( radius_cm: float, angle_deg: float, backward: bool = False, speed_cm_s: float = 0 ) -> path_msgs.PathSegment:
+    """A circle segment that changes the heading by angle_deg, the circle is on the left for a positive angle."""
+    return path_msgs.PathSegment( arc=path_msgs.Arc( radius_cm=radius_cm, angle_deg=angle_deg, backward=backward ),
+                                  speed_cm_s=speed_cm_s )
+
+
+def send_follow_path( segments: list[ path_msgs.PathSegment ], speed_cm_s: float, acceleration_cm_s2: float,
+                      path_id: int = 0, append: bool = False ) -> bool:
+    """Drive the segments made with line(), turn() and arc(). PathFollower reports progress with PathProgress."""
+    msg = path_msgs.FollowPath( id=path_id, segments=segments, speed_cm_s=speed_cm_s,
+                                acceleration_cm_s2=acceleration_cm_s2, append=append )
+    return send_protobuf_message( msg )
+
+
+def send_stop_path( deceleration_cm_s2: float = 0 ) -> bool:
+    """Stop the running path, with its own acceleration when deceleration_cm_s2 is 0."""
+    return send_protobuf_message( path_msgs.StopPath( deceleration_cm_s2=deceleration_cm_s2 ) )
 
 
 def send_reset_heading( heading_deg: float = 0 ) -> bool:
